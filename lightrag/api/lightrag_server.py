@@ -64,6 +64,8 @@ from lightrag.kg.shared_storage import (
 from fastapi.security import OAuth2PasswordRequestForm
 from lightrag.api.auth import auth_handler
 
+from .instance_manager import create_multi_workspace_app, InstanceManager
+
 # use the .env that is inside the current folder
 # allows to use different .env file for each lightrag instance
 # the OS environment variables take precedence over the .env file
@@ -1367,7 +1369,7 @@ def get_application(args=None):
     """Factory function for creating the FastAPI application"""
     if args is None:
         args = global_args
-    return create_app(args)
+    return create_multi_workspace_app(args) # create_app(args)
 
 
 def configure_logging():
@@ -1502,7 +1504,7 @@ def main():
     # - Cleanup is handled by the lifespan context manager's finally block
 
     # Create application instance directly instead of using factory function
-    app = create_app(global_args)
+    app = create_multi_workspace_app(global_args) # create_app(global_args)
 
     # Start Uvicorn in single process mode
     uvicorn_config = {

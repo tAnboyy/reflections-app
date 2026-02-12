@@ -11,10 +11,11 @@ import logging
 from ascii_colors import ASCIIColors
 from lightrag.api import __api_version__ as api_version
 from lightrag import __version__ as core_version
+from lightrag import LightRAG
 from lightrag.constants import (
     DEFAULT_FORCE_LLM_SUMMARY_ON_MERGE,
 )
-from fastapi import HTTPException, Security, Request, Response, status
+from fastapi import HTTPException, Security, Request, Response, status, Header
 from fastapi.security import APIKeyHeader, OAuth2PasswordBearer
 from starlette.status import HTTP_403_FORBIDDEN
 from .auth import auth_handler
@@ -39,6 +40,35 @@ _TOKEN_RENEWAL_SKIP_PATHS = [
     "/documents/pipeline_status",
 ]
 
+
+async def get_rag(
+    request: Request,
+    x_workspace: Optional[str] = Header(default=None, alias="X-Workspace"),
+    x_user_id: Optional[str] = Header(default=None, alias="X-User-ID"),
+) -> LightRAG:
+    """
+        Resolve (rag, doc_manager) per request using the InstanceManager stored in app.state.
+        - user_id is derived from the bearer token via auth_handler.
+        - workspace priority: X-Workspace header > ?workspace= query > global_args.workspace > "".
+    """
+    token_info = getattr(request.state, "auth", None)
+
+    token_username = token_info.get("username") if token_info else None
+
+    token_meta = token_info.get("metadata", {}) if token_info else {}
+
+    token_user_id = token_meta.get("user_id") or token_username
+
+    if token_user_id and x_user_id and x_user_id != token_user_id:
+
+        raise HTTPException(status_code=401, detail="Invalid User")
+    
+    user_id = token_user_id
+    workspace = x_workspace
+
+    manager = request.app.state.instance_manager
+    rag, doc_manager = await manager.get_instance(user_id, workspace)
+    return rag, doc_manager
 
 def check_env_file():
     """

@@ -3,10 +3,11 @@ This module contains all query-related routes for the LightRAG API.
 """
 
 import json
-from typing import Any, Dict, List, Literal, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Any, Dict, List, Literal, Optional, Tuple
+from fastapi import APIRouter, Depends, HTTPException, Request, Header, Query
+from lightrag import LightRAG
 from lightrag.base import QueryParam
-from lightrag.api.utils_api import get_combined_auth_dependency
+from lightrag.api.utils_api import get_combined_auth_dependency, get_rag
 from lightrag.utils import logger
 from pydantic import BaseModel, Field, field_validator
 
@@ -322,7 +323,10 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
             },
         },
     )
-    async def query_text(request: QueryRequest):
+    async def query_text(
+        request: QueryRequest,
+        pair: LightRAG = Depends(get_rag)
+    ):
         """
         Comprehensive RAG query endpoint with non-streaming response. Parameter "stream" is ignored.
 
@@ -402,6 +406,7 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
                 - 500: Internal processing error (e.g., LLM service unavailable)
         """
         try:
+            rag, doc_manager = pair
             param = request.to_query_params(
                 False
             )  # Ensure stream=False for non-streaming endpoint
@@ -532,7 +537,10 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
             },
         },
     )
-    async def query_text_stream(request: QueryRequest):
+    async def query_text_stream(
+        request: QueryRequest,
+        pair: LightRAG = Depends(get_rag)
+    ):
         """
         Advanced RAG query endpoint with flexible streaming response.
 
@@ -660,6 +668,7 @@ def create_query_routes(rag, api_key: Optional[str] = None, top_k: int = 60):
             Use streaming mode for real-time interfaces and non-streaming for batch processing.
         """
         try:
+            rag, doc_manager = pair
             # Use the stream parameter from the request, defaulting to True if not specified
             stream_mode = request.stream if request.stream is not None else True
             param = request.to_query_params(stream_mode)
