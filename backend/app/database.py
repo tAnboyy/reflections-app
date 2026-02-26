@@ -16,12 +16,15 @@ DATABASE_URL = os.getenv(
     "postgresql://postgres:postgres@localhost:5432/reflection_chatbot",
 )
 
-# Supabase requires SSL; add connect_args if using a remote host
+# Use psycopg v3 dialect (psycopg2 is incompatible with Python 3.14)
+# SQLAlchemy requires postgresql+psycopg:// scheme for psycopg v3
+sqlalchemy_url = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+
 connect_args = {}
 if "supabase" in DATABASE_URL:
     connect_args["sslmode"] = "require"
 
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
+engine = create_engine(sqlalchemy_url, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
