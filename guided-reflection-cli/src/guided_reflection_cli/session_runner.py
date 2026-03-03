@@ -21,6 +21,7 @@ def run_interactive_session(
     student_path: str | Path,
     output_dir: str | Path | None = None,
     max_turns: int | None = None,
+    max_questions: int | None = None,
     debug: bool = False,
     console: Console | None = None,
     input_func: Callable[[str], str] | None = None,
@@ -32,7 +33,12 @@ def run_interactive_session(
     student = load_student_profile(student_path)
     llm = build_llm_client(Settings.from_env())
     graph = GuidedReflectionGraph(llm=llm, memory_provider=NullMemoryProvider())
-    state = graph.initialize_session(template, student, max_turns_override=max_turns)
+    state = graph.initialize_session(
+        template,
+        student,
+        max_turns_override=max_turns,
+        max_questions_override=max_questions,
+    )
 
     console.print(f"[bold]Topic:[/bold] {state.template.title}")
     console.print(f"[bold]Student:[/bold] {state.student_profile.display_name}")

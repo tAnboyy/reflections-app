@@ -8,6 +8,11 @@ from pathlib import Path
 
 
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+_LEADING_STUDENT_RE = re.compile(r"^\s*student\s+", re.IGNORECASE)
+_LEADING_ACTION_RE = re.compile(
+    r"^(introduces|states|gives|explains|describes|identifies|discusses|reflects on|names)\s+",
+    re.IGNORECASE,
+)
 
 
 def count_words(text: str) -> int:
@@ -50,3 +55,14 @@ def unique_preserving_order(items: list[str]) -> list[str]:
         seen.add(item)
         ordered.append(item)
     return ordered
+
+
+def agenda_focus(description: str) -> str:
+    cleaned = re.sub(r"\s+", " ", description.strip()).rstrip(".")
+    cleaned = _LEADING_STUDENT_RE.sub("", cleaned)
+    cleaned = _LEADING_ACTION_RE.sub("", cleaned)
+    if not cleaned:
+        return "this part of the reflection"
+    if cleaned[0].isalpha():
+        cleaned = cleaned[0].lower() + cleaned[1:]
+    return cleaned

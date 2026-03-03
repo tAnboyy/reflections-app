@@ -42,3 +42,21 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(evaluation.question_status, RequiredQuestionStatus.ASKED_UNACCEPTABLE)
         updated_state = apply_turn_evaluation(self.state, evaluation)
         self.assertEqual(updated_state.agenda_atom_statuses["problem_definition"], AgendaStatus.PARTIALLY_MET)
+
+
+class AgendaFirstEvaluationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        template = load_template(FIXTURES / "templates" / "new_template.yaml")
+        student = load_student_profile(FIXTURES / "students" / "student_example.yaml")
+        graph = GuidedReflectionGraph(FakeReflectionLLM())
+        self.state = graph.initialize_session(template, student)
+        self.state = graph.step(self.state)
+
+    def test_vague_answer_is_recorded_without_triggering_required_question_retry(self) -> None:
+        self.state.pending_student_reply = "I am not sure yet."
+        evaluation = evaluate_pending_reply(self.state)
+        self.assertEqual(evaluation.question_status, RequiredQuestionStatus.ACCEPTABLE)
+        self.assertEqual(evaluation.agenda_atom_updates[0].status, AgendaStatus.PARTIALLY_MET)
+        updated_state = apply_turn_evaluation(self.state, evaluation)
+        self.assertEqual(updated_state.agenda_atom_statuses["claim"], AgendaStatus.PARTIALLY_MET)
+        self.assertTrue(updated_state.agenda_atom_missing["claim"])

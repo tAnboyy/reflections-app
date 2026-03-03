@@ -5,6 +5,7 @@ from __future__ import annotations
 from guided_reflection_cli.llm import ReflectionLLM
 from guided_reflection_cli.schemas import (
     AgendaCompletion,
+    AgendaStatus,
     FinalReport,
     QuestionCompletion,
     RequiredQuestionStatus,
@@ -19,21 +20,26 @@ def build_final_report(state: SessionState, llm: ReflectionLLM) -> FinalReport:
         AgendaCompletion(
             atom_id=atom.id,
             description=atom.description,
-            status=state.agenda_atom_statuses.get(atom.id),
+            status=state.agenda_atom_statuses.get(atom.id, AgendaStatus.UNKNOWN),
             evidence=state.agenda_atom_evidence.get(atom.id, []),
+            attempts=state.agenda_atom_attempt_counts.get(atom.id, 0),
+            missing_elements=state.agenda_atom_missing.get(atom.id, []),
         )
         for atom in state.template.agenda_atoms
     ]
-    required_question_report = [
-        QuestionCompletion(
-            question_id=question.id,
-            prompt=question.prompt,
-            status=state.required_question_statuses.get(question.id, RequiredQuestionStatus.UNASKED),
-            attempts=state.question_attempt_counts.get(question.id, 0),
-        )
-        for question in state.template.question_bank
-        if question.required
-    ]
+    required_question_report = []
+    if state.template.uses_legacy_question_bank():
+        required_question_report = [
+            QuestionCompletion(
+                question_id=question.id,
+                prompt=question.prompt,
+                status=state.required_question_statuses.get(question.id, RequiredQuestionStatus.UNASKED),
+                attempts=state.question_attempt_counts.get(question.id, 0),
+            )
+            for question in state.template.question_bank
+            if question.required
+        ]
+
     rubric_scores = [
         RubricScore(
             rubric_id=criterion.id,
@@ -45,12 +51,26 @@ def build_final_report(state: SessionState, llm: ReflectionLLM) -> FinalReport:
     ]
 
     teacher_notes = [*narrative.teacher_notes]
-    met_atoms = [item.description for item in agenda_completion_report if item.status.value == "met"]
-    unmet_atoms = [item.description for item in agenda_completion_report if item.status.value != "met"]
+    met_atoms = [item.description for item in agenda_completion_report if item.status == AgendaStatus.MET]
     if met_atoms:
         teacher_notes.append(f"Strengths shown: {met_atoms[0]}.")
-    if unmet_atoms:
-        teacher_notes.append(f"Follow-up needed on: {unmet_atoms[0]}.")
+
+    unresolved_atoms = [
+        item
+        for item in agenda_completion_report
+        if item.status != AgendaStatus.MET and item.attempts > 0
+    ]
+    for item in unresolved_atoms:
+        missing_summary = "; ".join(item.missing_elements) or "Needs fuller reflection."
+        teacher_notes.append(f"Follow-up needed on '{item.description}': {missing_summary}")
+
+    untouched_atoms = [
+        item.description
+        for item in agenda_completion_report
+        if item.status == AgendaStatus.UNKNOWN and item.attempts == 0
+    ]
+    if untouched_atoms:
+        teacher_notes.append(f"Not yet attempted: {untouched_atoms[0]}.")
     if state.open_issues:
         teacher_notes.append(f"Open issues: {', '.join(state.open_issues[:3])}.")
 
@@ -67,7 +87,10 @@ def build_final_report(state: SessionState, llm: ReflectionLLM) -> FinalReport:
 
 def render_markdown_report(state: SessionState, report: FinalReport) -> str:
     agenda_rows = "\n".join(
-        f"| {item.atom_id} | {item.status.value} | {item.description} | {'; '.join(item.evidence) or '-'} |"
+        (
+            f"| {item.atom_id} | {item.status.value} | {item.attempts} | {item.description} | "
+            f"{'; '.join(item.evidence) or '-'} | {'; '.join(item.missing_elements) or '-'} |"
+        )
         for item in report.agenda_completion_report
     )
     question_rows = "\n".join(
@@ -79,6 +102,30 @@ def render_markdown_report(state: SessionState, report: FinalReport) -> str:
         for item in report.rubric_scores
     )
     teacher_notes = "\n".join(f"- {note}" for note in report.teacher_notes) or "- None"
+
+    question_section = ""
+    if report.required_question_report:
+        question_section = f"""
+## Required Questions
+
+| Question ID | Status | Attempts | Prompt |
+| --- | --- | --- | --- |
+{question_rows}
+"""
+
+    agenda_follow_up = ""
+    if state.template.uses_agenda_first():
+        follow_up_lines = [
+            f"- {item.description}: {'; '.join(item.missing_elements) or 'No follow-up needed.'}"
+            for item in report.agenda_completion_report
+            if item.attempts > 0
+        ]
+        agenda_follow_up = f"""
+## Agenda Follow-up
+
+{chr(10).join(follow_up_lines) if follow_up_lines else "- None"}
+"""
+
     return f"""# Guided Reflection Report
 
 ## Session Info
@@ -98,22 +145,16 @@ def render_markdown_report(state: SessionState, report: FinalReport) -> str:
 
 ## Agenda Completion
 
-| Atom ID | Status | Description | Evidence |
-| --- | --- | --- | --- |
+| Atom ID | Status | Attempts | Description | Evidence | Missing |
+| --- | --- | --- | --- | --- | --- |
 {agenda_rows}
-
-## Required Questions
-
-| Question ID | Status | Attempts | Prompt |
-| --- | --- | --- | --- |
-{question_rows}
-
+{question_section}
 ## Rubric Summary
 
 | Rubric ID | Score | Description |
 | --- | --- | --- |
 {rubric_rows}
-
+{agenda_follow_up}
 ## Teacher Notes
 
 {teacher_notes}

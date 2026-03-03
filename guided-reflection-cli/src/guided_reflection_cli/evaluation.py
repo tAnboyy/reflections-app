@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from textwrap import shorten
 
 from guided_reflection_cli.schemas import (
@@ -10,6 +11,7 @@ from guided_reflection_cli.schemas import (
     AgendaStatus,
     AnswerAcceptability,
     ConversationPhase,
+    PromptSource,
     QuestionPlan,
     QuestionSpec,
     ReflectionTemplate,
@@ -19,9 +21,10 @@ from guided_reflection_cli.schemas import (
     SessionState,
     Strategy,
     TurnEvaluation,
+    TurnPurpose,
     TurnRecord,
 )
-from guided_reflection_cli.utils import contains_any, count_words, unique_preserving_order
+from guided_reflection_cli.utils import agenda_focus, contains_any, count_words, unique_preserving_order
 
 
 POSITION_HINTS = [
@@ -61,6 +64,26 @@ NEXT_ACTION_HINTS = [
     "my next step",
 ]
 UNCERTAINTY_HINTS = ["i don't know", "not sure", "confused", "unclear", "maybe"]
+STOP_INTENT_PHRASES = [
+    "please stop",
+    "can we stop",
+    "lets stop",
+    "stop asking",
+    "no more questions",
+    "please end",
+    "can we end",
+    "lets end",
+    "end this",
+    "wrap this up",
+    "finish this",
+    "i want to stop",
+    "i want to end",
+    "im done",
+    "this is enough",
+    "thats enough",
+    "done with the questions",
+    "done with this reflection",
+]
 
 
 def initialize_state_maps(template: ReflectionTemplate) -> tuple[
@@ -70,6 +93,9 @@ def initialize_state_maps(template: ReflectionTemplate) -> tuple[
     dict[str, AgendaStatus],
     dict[str, list[str]],
     dict[str, int],
+    dict[str, int],
+    dict[str, int],
+    dict[str, list[str]],
 ]:
     required_question_statuses = {
         question.id: RequiredQuestionStatus.UNASKED
@@ -83,6 +109,9 @@ def initialize_state_maps(template: ReflectionTemplate) -> tuple[
     agenda_atom_statuses = {atom.id: AgendaStatus.UNKNOWN for atom in template.agenda_atoms}
     agenda_atom_evidence = {atom.id: [] for atom in template.agenda_atoms}
     rubric_progress = {criterion.id: criterion.scale_min for criterion in template.rubric}
+    agenda_atom_attempt_counts = {atom.id: 0 for atom in template.agenda_atoms}
+    agenda_atom_last_asked_turn = {atom.id: 0 for atom in template.agenda_atoms}
+    agenda_atom_missing = {atom.id: [] for atom in template.agenda_atoms}
     return (
         required_question_statuses,
         question_attempt_counts,
@@ -90,10 +119,33 @@ def initialize_state_maps(template: ReflectionTemplate) -> tuple[
         agenda_atom_statuses,
         agenda_atom_evidence,
         rubric_progress,
+        agenda_atom_attempt_counts,
+        agenda_atom_last_asked_turn,
+        agenda_atom_missing,
     )
 
 
+def student_reply_signals_exit(reply: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9\s]", "", reply.lower())
+    if not normalized:
+        return False
+    if normalized in {"exit", "quit"}:
+        return True
+    word_count = len(normalized.split())
+    if word_count > 12:
+        return False
+    return any(phrase in normalized for phrase in STOP_INTENT_PHRASES)
+
+
 def determine_phase(state: SessionState) -> ConversationPhase:
+    if state.template.uses_agenda_first():
+        required_atoms = [atom for atom in state.template.agenda_atoms if atom.required]
+        if state.turn_index == 0:
+            return ConversationPhase.WARMUP
+        if required_atoms and all(state.agenda_atom_attempt_counts.get(atom.id, 0) >= 1 for atom in required_atoms):
+            return ConversationPhase.SYNTHESIS
+        return ConversationPhase.PROBING
+
     unmet_required_atoms = [
         atom.id
         for atom in state.template.agenda_atoms
@@ -114,6 +166,49 @@ def determine_phase(state: SessionState) -> ConversationPhase:
 
 
 def plan_next_step(state: SessionState) -> QuestionPlan:
+    if state.template.uses_agenda_first():
+        return plan_next_agenda_step(state)
+    return plan_next_legacy_step(state)
+
+
+def plan_next_agenda_step(state: SessionState) -> QuestionPlan:
+    phase = determine_phase(state)
+    for atom in state.template.agenda_atoms:
+        if not atom.required:
+            continue
+        if state.agenda_atom_attempt_counts.get(atom.id, 0) >= 1:
+            continue
+        strategy = Strategy.CLARIFY if phase == ConversationPhase.WARMUP else Strategy.PROBE
+        return QuestionPlan(
+            strategy=strategy,
+            target_atom_ids=[atom.id],
+            phase=phase,
+            reasoning_summary=f"Ask agenda atom '{atom.id}' in template order.",
+            prompt_source=PromptSource.AGENDA_ATOM,
+            turn_purpose=TurnPurpose.OPENING,
+        )
+
+    if not state.synthesis_completed:
+        return QuestionPlan(
+            strategy=Strategy.SYNTHESIZE,
+            target_atom_ids=[],
+            phase=ConversationPhase.SYNTHESIS,
+            reasoning_summary="All required agenda atoms were attempted once; ask one synthesis question.",
+            prompt_source=PromptSource.SYSTEM_SYNTHESIS,
+            turn_purpose=TurnPurpose.SYNTHESIS,
+        )
+
+    return QuestionPlan(
+        strategy=Strategy.SYNTHESIZE,
+        target_atom_ids=[],
+        phase=ConversationPhase.SYNTHESIS,
+        reasoning_summary="Synthesis is complete; prepare to finalize.",
+        prompt_source=PromptSource.SYSTEM_SYNTHESIS,
+        turn_purpose=TurnPurpose.SYNTHESIS,
+    )
+
+
+def plan_next_legacy_step(state: SessionState) -> QuestionPlan:
     phase = determine_phase(state)
 
     for question in state.template.question_bank:
@@ -133,6 +228,8 @@ def plan_next_step(state: SessionState) -> QuestionPlan:
                     f"Retry required question '{question.id}' because it is not yet acceptable."
                 ),
                 needs_scaffolding=needs_scaffolding,
+                prompt_source=PromptSource.QUESTION_BANK,
+                turn_purpose=TurnPurpose.REVISIT,
             )
 
     for question in state.template.question_bank:
@@ -145,6 +242,8 @@ def plan_next_step(state: SessionState) -> QuestionPlan:
                 target_question_id=question.id,
                 phase=phase,
                 reasoning_summary=f"Ask required question '{question.id}' next.",
+                prompt_source=PromptSource.QUESTION_BANK,
+                turn_purpose=TurnPurpose.OPENING,
             )
 
     unmet_atoms = [
@@ -161,6 +260,8 @@ def plan_next_step(state: SessionState) -> QuestionPlan:
             target_question_id=None,
             phase=phase,
             reasoning_summary=f"Close the remaining gap on agenda atom '{unmet_atoms[0]}'.",
+            prompt_source=PromptSource.QUESTION_BANK,
+            turn_purpose=TurnPurpose.REVISIT,
         )
 
     return QuestionPlan(
@@ -169,10 +270,38 @@ def plan_next_step(state: SessionState) -> QuestionPlan:
         target_question_id=None,
         phase=ConversationPhase.SYNTHESIS,
         reasoning_summary="All required checkpoints are satisfied; prepare to finalize.",
+        prompt_source=PromptSource.SYSTEM_SYNTHESIS,
+        turn_purpose=TurnPurpose.SYNTHESIS,
     )
 
 
 def resolve_question(state: SessionState, plan: QuestionPlan) -> QuestionSpec:
+    if plan.prompt_source == PromptSource.SYSTEM_SYNTHESIS:
+        return QuestionSpec(
+            id="agenda_synthesis",
+            prompt="main takeaway from this reflection",
+            required=False,
+            intent_tags=["synthesis"],
+            linked_atoms=[],
+        )
+
+    if state.template.uses_agenda_first():
+        atom = get_atom_by_id(state.template, plan.target_atom_ids[0])
+        if atom is None:
+            raise ValueError(f"Unknown agenda atom id: {plan.target_atom_ids[0]}")
+        suffix = "opening" if plan.turn_purpose == TurnPurpose.OPENING else "revisit"
+        return QuestionSpec(
+            id=f"agenda_{atom.id}_{suffix}",
+            prompt=agenda_focus(atom.description),
+            required=atom.required,
+            intent_tags=[plan.strategy.value, plan.turn_purpose.value],
+            linked_atoms=[atom.id],
+        )
+
+    return resolve_legacy_question(state, plan)
+
+
+def resolve_legacy_question(state: SessionState, plan: QuestionPlan) -> QuestionSpec:
     if plan.target_question_id:
         question = get_question_by_id(state.template, plan.target_question_id)
         if question is None:
@@ -195,9 +324,11 @@ def resolve_question(state: SessionState, plan: QuestionPlan) -> QuestionSpec:
         )
 
     atom = get_atom_by_id(state.template, plan.target_atom_ids[0])
+    if atom is None:
+        raise ValueError(f"Unknown agenda atom id: {plan.target_atom_ids[0]}")
     return QuestionSpec(
         id=f"followup_{atom.id}",
-        prompt=f"Can you deepen your answer so it clearly addresses this expectation: {atom.description}",
+        prompt=f"Would you like to add a little more about {agenda_focus(atom.description)}?",
         required=False,
         intent_tags=[plan.strategy.value, "followup"],
         linked_atoms=[atom.id],
@@ -243,10 +374,12 @@ def evaluate_pending_reply(state: SessionState) -> TurnEvaluation:
 
     misconceptions = []
     if contains_any(answer, UNCERTAINTY_HINTS):
-        misconceptions.append("Student expressed uncertainty that may need follow-up.")
+        misconceptions.append("Student expressed uncertainty that may need gentle follow-up.")
 
     question_status = RequiredQuestionStatus.ACCEPTABLE
-    if question.required or question.question_id in state.required_question_statuses:
+    if state.template.uses_legacy_question_bank() and (
+        question.required or question.question_id in state.required_question_statuses
+    ):
         if answer_acceptability == AnswerAcceptability.ACCEPTABLE and not misconceptions:
             question_status = RequiredQuestionStatus.ACCEPTABLE
         else:
@@ -254,7 +387,7 @@ def evaluate_pending_reply(state: SessionState) -> TurnEvaluation:
 
     rubric_observations = build_rubric_observations(state.template, atom_updates)
     recommend_next_strategy = None
-    if answer_acceptability == AnswerAcceptability.UNACCEPTABLE:
+    if state.template.uses_legacy_question_bank() and answer_acceptability == AnswerAcceptability.UNACCEPTABLE:
         if count_words(answer) < state.template.policies.min_student_words_per_turn:
             recommend_next_strategy = Strategy.SCAFFOLD
         else:
@@ -301,6 +434,7 @@ def apply_turn_evaluation(state: SessionState, evaluation: TurnEvaluation) -> Se
     for update in evaluation.agenda_atom_updates:
         current_status = state.agenda_atom_statuses.get(update.atom_id, AgendaStatus.UNKNOWN)
         state.agenda_atom_statuses[update.atom_id] = pick_stronger_status(current_status, update.status)
+        state.agenda_atom_missing[update.atom_id] = update.missing
         if update.evidence:
             evidence_list = state.agenda_atom_evidence.setdefault(update.atom_id, [])
             if update.evidence not in evidence_list:
@@ -314,11 +448,16 @@ def apply_turn_evaluation(state: SessionState, evaluation: TurnEvaluation) -> Se
         [*evaluation.missing_elements, *evaluation.misconceptions]
     )
     state.pending_student_reply = None
+    if state.last_plan is not None and state.last_plan.turn_purpose == TurnPurpose.SYNTHESIS:
+        state.synthesis_completed = True
     state.conversation_phase = determine_phase(state)
     return state
 
 
 def is_session_complete(state: SessionState) -> bool:
+    if state.template.uses_agenda_first():
+        return state.synthesis_completed
+
     all_atoms_met = all(
         state.agenda_atom_statuses.get(atom.id) == AgendaStatus.MET
         for atom in state.template.agenda_atoms

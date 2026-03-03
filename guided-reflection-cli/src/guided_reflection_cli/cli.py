@@ -40,6 +40,11 @@ def run(
     template: Path = typer.Option(..., exists=True, readable=True, help="Path to the template YAML."),
     student: Path = typer.Option(..., exists=True, readable=True, help="Path to the student YAML."),
     output_dir: Path | None = typer.Option(None, help="Optional output directory for artifacts."),
+    max_questions: int | None = typer.Option(
+        None,
+        min=1,
+        help="Override the template max_questions cap for assistant questions.",
+    ),
     max_turns: int | None = typer.Option(None, min=1, help="Override the template max_turns."),
     debug: bool = typer.Option(False, help="Print planner and issue debug output."),
 ) -> None:
@@ -49,6 +54,7 @@ def run(
             template_path=template,
             student_path=student,
             output_dir=output_dir,
+            max_questions=max_questions,
             max_turns=max_turns,
             debug=debug,
             console=console,

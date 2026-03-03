@@ -27,6 +27,10 @@ class CliTests(unittest.TestCase):
             self.assertTrue(output_path.exists())
             parsed = yaml.safe_load(output_path.read_text(encoding="utf-8"))
             self.assertEqual(parsed["template_id"], "ethics-reflection-week-4")
+            self.assertNotIn("question_bank", parsed)
+            self.assertEqual(parsed["policies"]["authoring_mode"], "agenda_first")
+            self.assertEqual(parsed["policies"]["completion_mode"], "soft_capture")
+            self.assertEqual(parsed["policies"]["max_questions"], 5)
 
     def test_template_validate_returns_nonzero_on_invalid_file(self) -> None:
         invalid_template = """
@@ -41,6 +45,8 @@ agenda_atoms: []
 question_bank: []
 rubric: []
 policies:
+  authoring_mode: legacy_question_bank
+  conversation_style: gentle_coach
   tone: supportive
   max_turns: 0
   min_student_words_per_turn: 1

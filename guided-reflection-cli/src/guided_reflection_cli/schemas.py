@@ -30,6 +30,7 @@ class ConversationPhase(str, Enum):
 
 class StopReason(str, Enum):
     COMPLETED = "completed"
+    MAX_QUESTIONS = "max_questions"
     MAX_TURNS = "max_turns"
     STUDENT_EXIT = "student_exit"
     INTERRUPT = "interrupt"
@@ -47,6 +48,35 @@ class Strategy(str, Enum):
 class AnswerAcceptability(str, Enum):
     ACCEPTABLE = "acceptable"
     UNACCEPTABLE = "unacceptable"
+
+
+class AuthoringMode(str, Enum):
+    AUTO = "auto"
+    AGENDA_FIRST = "agenda_first"
+    LEGACY_QUESTION_BANK = "legacy_question_bank"
+
+
+class ConversationStyle(str, Enum):
+    GENTLE_COACH = "gentle_coach"
+    NEUTRAL_GUIDE = "neutral_guide"
+    ACADEMIC_REVIEWER = "academic_reviewer"
+
+
+class CompletionMode(str, Enum):
+    REQUIRED_ATOMS_AND_REQUIRED_QUESTIONS = "required_atoms_and_required_questions"
+    SOFT_CAPTURE = "soft_capture"
+
+
+class PromptSource(str, Enum):
+    AGENDA_ATOM = "agenda_atom"
+    QUESTION_BANK = "question_bank"
+    SYSTEM_SYNTHESIS = "system_synthesis"
+
+
+class TurnPurpose(str, Enum):
+    OPENING = "opening"
+    REVISIT = "revisit"
+    SYNTHESIS = "synthesis"
 
 
 class AcceptanceRules(BaseModel):
@@ -112,22 +142,28 @@ class RubricCriterion(BaseModel):
 class SessionPolicies(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    authoring_mode: AuthoringMode = AuthoringMode.AUTO
+    conversation_style: ConversationStyle = ConversationStyle.GENTLE_COACH
     tone: str = "supportive"
+    max_questions: int | None = None
     max_turns: int = 12
     min_student_words_per_turn: int = 15
     allow_scaffolding: bool = True
-    completion_mode: Literal["required_atoms_and_required_questions"] = (
-        "required_atoms_and_required_questions"
-    )
+    completion_mode: CompletionMode = CompletionMode.REQUIRED_ATOMS_AND_REQUIRED_QUESTIONS
     final_summary_style: str = "concise"
 
-    @field_validator("max_turns", "min_student_words_per_turn")
+    @field_validator("max_questions", "max_turns", "min_student_words_per_turn")
     @classmethod
-    def validate_positive_ints(cls, value: int, info: Any) -> int:
-        minimum = 1 if info.field_name == "max_turns" else 0
+    def validate_positive_ints(cls, value: int | None, info: Any) -> int | None:
+        if value is None:
+            return value
+        minimum = 0 if info.field_name == "min_student_words_per_turn" else 1
         if value < minimum:
             raise ValueError(f"{info.field_name} must be >= {minimum}")
         return value
+
+    def effective_question_limit(self) -> int:
+        return self.max_questions or self.max_turns
 
 
 class ReflectionTemplate(BaseModel):
@@ -139,7 +175,7 @@ class ReflectionTemplate(BaseModel):
     topic: str
     assignment: AssignmentSpec
     agenda_atoms: list[AgendaAtom]
-    question_bank: list[QuestionSpec]
+    question_bank: list[QuestionSpec] = Field(default_factory=list)
     rubric: list[RubricCriterion]
     policies: SessionPolicies = Field(default_factory=SessionPolicies)
 
@@ -152,9 +188,29 @@ class ReflectionTemplate(BaseModel):
 
     @model_validator(mode="after")
     def validate_links(self) -> "ReflectionTemplate":
+        if not self.agenda_atoms:
+            raise ValueError("agenda_atoms must contain at least one item")
+
         atom_ids = _ensure_unique_ids(self.agenda_atoms, "agenda_atoms")
         question_ids = _ensure_unique_ids(self.question_bank, "question_bank")
         rubric_ids = _ensure_unique_ids(self.rubric, "rubric")
+
+        resolved_mode = self.resolved_authoring_mode()
+        if resolved_mode == AuthoringMode.AGENDA_FIRST:
+            if self.question_bank and self.policies.authoring_mode == AuthoringMode.AGENDA_FIRST:
+                raise ValueError("agenda-first templates must not define question_bank entries")
+            if self.policies.completion_mode != CompletionMode.SOFT_CAPTURE:
+                raise ValueError(
+                    "agenda-first templates must use completion_mode 'soft_capture'"
+                )
+        if resolved_mode == AuthoringMode.LEGACY_QUESTION_BANK:
+            if not self.question_bank:
+                raise ValueError("legacy question-bank templates must define question_bank entries")
+            if self.policies.completion_mode != CompletionMode.REQUIRED_ATOMS_AND_REQUIRED_QUESTIONS:
+                raise ValueError(
+                    "legacy question-bank templates must use completion_mode "
+                    "'required_atoms_and_required_questions'"
+                )
 
         for question in self.question_bank:
             for atom_id in question.linked_atoms:
@@ -172,6 +228,19 @@ class ReflectionTemplate(BaseModel):
 
         _ = question_ids
         return self
+
+    def resolved_authoring_mode(self) -> AuthoringMode:
+        if self.policies.authoring_mode == AuthoringMode.AUTO:
+            if self.question_bank:
+                return AuthoringMode.LEGACY_QUESTION_BANK
+            return AuthoringMode.AGENDA_FIRST
+        return self.policies.authoring_mode
+
+    def uses_agenda_first(self) -> bool:
+        return self.resolved_authoring_mode() == AuthoringMode.AGENDA_FIRST
+
+    def uses_legacy_question_bank(self) -> bool:
+        return self.resolved_authoring_mode() == AuthoringMode.LEGACY_QUESTION_BANK
 
 
 class StudentProfile(BaseModel):
@@ -216,6 +285,8 @@ class QuestionPlan(BaseModel):
     phase: ConversationPhase
     reasoning_summary: str
     needs_scaffolding: bool = False
+    prompt_source: PromptSource = PromptSource.QUESTION_BANK
+    turn_purpose: TurnPurpose = TurnPurpose.OPENING
 
 
 class GeneratedQuestion(BaseModel):
@@ -266,6 +337,8 @@ class AgendaCompletion(BaseModel):
     description: str
     status: AgendaStatus
     evidence: list[str] = Field(default_factory=list)
+    attempts: int = 0
+    missing_elements: list[str] = Field(default_factory=list)
 
 
 class QuestionCompletion(BaseModel):
@@ -312,6 +385,9 @@ class SessionState(BaseModel):
     question_unacceptable_counts: dict[str, int] = Field(default_factory=dict)
     agenda_atom_statuses: dict[str, AgendaStatus] = Field(default_factory=dict)
     agenda_atom_evidence: dict[str, list[str]] = Field(default_factory=dict)
+    agenda_atom_attempt_counts: dict[str, int] = Field(default_factory=dict)
+    agenda_atom_last_asked_turn: dict[str, int] = Field(default_factory=dict)
+    agenda_atom_missing: dict[str, list[str]] = Field(default_factory=dict)
     rubric_progress: dict[str, int] = Field(default_factory=dict)
     open_issues: list[str] = Field(default_factory=list)
     transcript: list[TurnRecord] = Field(default_factory=list)
@@ -324,6 +400,7 @@ class SessionState(BaseModel):
     debug_trace: list[str] = Field(default_factory=list)
     final_report: FinalReport | None = None
     memory_snippets: list[MemorySnippet] = Field(default_factory=list)
+    synthesis_completed: bool = False
 
 
 def _ensure_unique_ids(items: list[Any], field_name: str) -> set[str]:

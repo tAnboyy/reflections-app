@@ -25,7 +25,7 @@ def build_planner_prompt(state: SessionState) -> str:
         Remaining required atoms: {remaining_atoms}
         Remaining required questions: {remaining_questions}
         Current phase: {state.conversation_phase.value}
-        Keep the next move focused and agenda-driven.
+        Keep the next move focused on the educator agenda without sounding pressuring.
         """
     ).strip()
 
@@ -40,9 +40,13 @@ def build_question_generation_messages(
     system = dedent(
         """
         You are a guided reflection tutor.
-        Ask exactly one concise question.
-        Keep the educator agenda primary.
-        Do not reveal internal planning or grading.
+        Acknowledge the student's latest idea in one short clause when that helps the conversation feel natural.
+        Ask exactly one open question.
+        Avoid grading language, urgency, pressure, or corrective phrasing.
+        Do not repeat the same question with only minor wording changes.
+        Offer an optional scaffold only if the student seems unsure or the gap is substantial.
+        Keep the whole response to at most two sentences.
+        Use the student's name only on the first turn if needed, not every turn.
         """
     ).strip()
     user = dedent(
@@ -53,14 +57,16 @@ def build_question_generation_messages(
         Standing summary: {student_profile.standing_summary or "Not provided"}
         Strengths: {", ".join(student_profile.strengths) or "Not provided"}
         Growth areas: {", ".join(student_profile.growth_areas) or "Not provided"}
-        Preferred tone: {student_profile.preferences.get("tone", template.policies.tone)}
+        Preferred tone hint: {student_profile.preferences.get("tone", template.policies.tone)}
+        Conversation style: {template.policies.conversation_style.value}
+        Prompt source: {plan.prompt_source.value}
+        Turn purpose: {plan.turn_purpose.value}
         Strategy: {plan.strategy.value}
-        Phase: {plan.phase.value}
-        Base educator question: {base_prompt}
+        Educator agenda focus or base question: {base_prompt}
         Recent transcript:
         {transcript_excerpt or "(none yet)"}
 
-        Rephrase the question so it is personalized, concise, and still clearly targets the same requirement.
+        Rephrase the next question so it feels warm, natural, and still targets the same agenda focus.
         """
     ).strip()
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -73,7 +79,7 @@ def build_turn_evaluator_prompt(state: SessionState, student_reply: str) -> str:
         Evaluate the latest student reply for a guided reflection.
         Question asked: {question}
         Student reply: {student_reply}
-        Keep the agenda and required completion criteria dominant.
+        Keep the educator agenda visible, but do not assume the student must be corrected immediately.
         """
     ).strip()
 

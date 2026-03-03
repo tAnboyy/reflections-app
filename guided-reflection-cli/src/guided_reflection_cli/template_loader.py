@@ -22,29 +22,18 @@ assignment:
   deliverable: Short guided reflection
 agenda_atoms:
   - id: claim
-    description: Student states a clear position on the tradeoff.
+    description: the current position on this tradeoff
     required: true
     acceptance_rules:
       min_words: 20
       must_include_concrete_position: true
     linked_rubric_criteria: [clarity]
   - id: example
-    description: Student gives a specific example from experience or coursework.
+    description: a specific case from experience or coursework that shaped this view
     required: true
     acceptance_rules:
       must_include_example: true
     linked_rubric_criteria: [evidence]
-question_bank:
-  - id: opening_position
-    prompt: What is your current position on this tradeoff?
-    required: true
-    intent_tags: [warmup, claim]
-    linked_atoms: [claim]
-  - id: concrete_example
-    prompt: Can you describe a specific case that shaped your thinking?
-    required: true
-    intent_tags: [probe, evidence]
-    linked_atoms: [example]
 rubric:
   - id: clarity
     description: Response is specific and understandable.
@@ -55,11 +44,14 @@ rubric:
     scale_min: 0
     scale_max: 3
 policies:
+  authoring_mode: agenda_first
+  conversation_style: gentle_coach
   tone: supportive
+  max_questions: 5
   max_turns: 12
   min_student_words_per_turn: 15
   allow_scaffolding: true
-  completion_mode: required_atoms_and_required_questions
+  completion_mode: soft_capture
   final_summary_style: concise
 """
 

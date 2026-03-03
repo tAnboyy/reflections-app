@@ -12,12 +12,14 @@ from guided_reflection_cli.evaluation import (
     is_session_complete,
     plan_next_step,
     resolve_question,
+    student_reply_signals_exit,
 )
 from guided_reflection_cli.llm import ReflectionLLM
 from guided_reflection_cli.memory import MemoryProvider, NullMemoryProvider
 from guided_reflection_cli.reporting import build_final_report
 from guided_reflection_cli.schemas import (
     ConversationPhase,
+    PromptSource,
     ReflectionTemplate,
     SessionState,
     StopReason,
@@ -82,10 +84,13 @@ class GuidedReflectionGraph:
         template: ReflectionTemplate,
         student_profile: StudentProfile,
         max_turns_override: int | None = None,
+        max_questions_override: int | None = None,
     ) -> SessionState:
         template_copy = template.model_copy(deep=True)
         if max_turns_override is not None:
             template_copy.policies.max_turns = max_turns_override
+        if max_questions_override is not None:
+            template_copy.policies.max_questions = max_questions_override
         (
             required_question_statuses,
             question_attempt_counts,
@@ -93,6 +98,9 @@ class GuidedReflectionGraph:
             agenda_atom_statuses,
             agenda_atom_evidence,
             rubric_progress,
+            agenda_atom_attempt_counts,
+            agenda_atom_last_asked_turn,
+            agenda_atom_missing,
         ) = initialize_state_maps(template_copy)
         return SessionState(
             session_id=str(uuid4()),
@@ -104,6 +112,9 @@ class GuidedReflectionGraph:
             question_unacceptable_counts=question_unacceptable_counts,
             agenda_atom_statuses=agenda_atom_statuses,
             agenda_atom_evidence=agenda_atom_evidence,
+            agenda_atom_attempt_counts=agenda_atom_attempt_counts,
+            agenda_atom_last_asked_turn=agenda_atom_last_asked_turn,
+            agenda_atom_missing=agenda_atom_missing,
             rubric_progress=rubric_progress,
             memory_snippets=self.memory_provider.retrieve(
                 student_profile.student_id,
@@ -190,6 +201,10 @@ class GuidedReflectionGraph:
         )
         state.last_assistant_question = generated
         state.asked_question_ids.append(generated.question_id)
+        if state.last_plan.prompt_source == PromptSource.AGENDA_ATOM:
+            for atom_id in generated.linked_atoms:
+                state.agenda_atom_attempt_counts[atom_id] = state.agenda_atom_attempt_counts.get(atom_id, 0) + 1
+                state.agenda_atom_last_asked_turn[atom_id] = len(state.transcript) + 1
         state.transcript.append(
             TurnRecord(
                 speaker="assistant",
@@ -202,6 +217,11 @@ class GuidedReflectionGraph:
 
     def _evaluate_response(self, state_dict: dict[str, Any]) -> dict[str, Any]:
         state = SessionState.model_validate(state_dict)
+        if state.pending_student_reply is not None and student_reply_signals_exit(state.pending_student_reply):
+            state.stop_reason = StopReason.STUDENT_EXIT
+            state.pending_student_reply = None
+            state.debug_trace.append("Student requested an early stop.")
+            return state.model_dump(mode="python")
         try:
             evaluation = evaluate_pending_reply(state)
         except Exception as exc:
@@ -217,8 +237,17 @@ class GuidedReflectionGraph:
 
     def _decide_next_action(self, state_dict: dict[str, Any]) -> dict[str, Any]:
         state = SessionState.model_validate(state_dict)
-        if is_session_complete(state):
+        if state.stop_reason is not None:
+            state.conversation_phase = ConversationPhase.FINALIZE
+        elif is_session_complete(state):
             state.stop_reason = StopReason.COMPLETED
+            state.conversation_phase = ConversationPhase.FINALIZE
+        elif len(state.asked_question_ids) >= state.template.policies.effective_question_limit():
+            state.stop_reason = (
+                StopReason.MAX_QUESTIONS
+                if state.template.policies.max_questions is not None
+                else StopReason.MAX_TURNS
+            )
             state.conversation_phase = ConversationPhase.FINALIZE
         elif state.turn_index >= state.template.policies.max_turns:
             state.stop_reason = StopReason.MAX_TURNS

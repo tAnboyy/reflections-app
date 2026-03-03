@@ -11,8 +11,13 @@ from guided_reflection_cli.prompts import (
     build_final_report_messages,
     build_question_generation_messages,
 )
-from guided_reflection_cli.schemas import GeneratedQuestion, QuestionPlan, SessionState
+from guided_reflection_cli.schemas import GeneratedQuestion, PromptSource, QuestionPlan, SessionState, TurnPurpose
 from guided_reflection_cli.settings import Settings
+from guided_reflection_cli.utils import contains_any
+
+
+UNCERTAINTY_HINTS = ["i don't know", "not sure", "confused", "unclear", "maybe"]
+OPTIONAL_SCAFFOLD = "If it helps, you can name one example, one reason it matters, or one next step."
 
 
 class NarrativeBundle(BaseModel):
@@ -57,22 +62,20 @@ class FakeReflectionLLM(ReflectionLLM):
         required: bool,
         intent_tags: list[str],
     ) -> GeneratedQuestion:
-        interest_hint = ""
-        if state.student_profile.notes:
-            interest_hint = f" If helpful, connect it to {state.student_profile.notes[0].rstrip('.')}."
-
-        starter = ""
-        if plan.strategy.value == "scaffold":
-            starter = " Answer in 2-3 sentences. You can start with: 'My position is ... because ...'."
-        elif plan.strategy.value == "clarify":
-            starter = " Be specific and concrete."
-        elif plan.strategy.value == "challenge":
-            starter = " Include one tension or counterpoint."
-        elif plan.strategy.value == "synthesize":
-            starter = " Focus on what matters most."
+        if plan.prompt_source == PromptSource.SYSTEM_SYNTHESIS:
+            question_text = self._compose_gentle_question(
+                state=state,
+                prompt="Looking back, what feels like the main takeaway from this reflection?",
+                plan=plan,
+            )
+        elif state.template.uses_agenda_first():
+            prompt = self._agenda_prompt(base_prompt, plan.turn_purpose)
+            question_text = self._compose_gentle_question(state=state, prompt=prompt, plan=plan)
+        else:
+            question_text = self._compose_gentle_question(state=state, prompt=base_prompt, plan=plan)
 
         return GeneratedQuestion(
-            question_text=f"{base_prompt}{starter}{interest_hint}",
+            question_text=question_text,
             question_id=question_id,
             intent_tags=intent_tags,
             phase=plan.phase,
@@ -96,6 +99,24 @@ class FakeReflectionLLM(ReflectionLLM):
             session_summary=session_summary,
             teacher_notes=teacher_notes,
         )
+
+    def _agenda_prompt(self, focus: str, turn_purpose: TurnPurpose) -> str:
+        if turn_purpose == TurnPurpose.REVISIT:
+            return (
+                f"Earlier you touched on {focus}. Before we wrap up, what would you want a reader to understand "
+                "about it?"
+            )
+        return f"Let's start with {focus}. What feels most important for you to say here?"
+
+    def _compose_gentle_question(self, state: SessionState, prompt: str, plan: QuestionPlan) -> str:
+        acknowledgment = _build_acknowledgment(state)
+        needs_scaffold = plan.needs_scaffolding or _student_sounds_uncertain(state)
+
+        if needs_scaffold and _looks_like_single_sentence(prompt):
+            return f"{prompt} {OPTIONAL_SCAFFOLD}"
+        if acknowledgment:
+            return f"{acknowledgment} {prompt}"
+        return prompt
 
 
 class OpenAIReflectionLLM(ReflectionLLM):
@@ -161,3 +182,27 @@ def build_llm_client(settings: Settings) -> ReflectionLLM:
     if settings.llm_provider == "ollama":
         settings.validate_provider_requirements()
     raise RuntimeError(f"Unsupported LLM provider: {settings.llm_provider}")
+
+
+def _build_acknowledgment(state: SessionState) -> str:
+    student_turns = [turn.text for turn in state.transcript if turn.speaker == "student"]
+    if not student_turns:
+        return ""
+    latest = student_turns[-1]
+    if contains_any(latest, UNCERTAINTY_HINTS):
+        return ""
+    if len(latest.split()) >= 8:
+        return "That gives us a useful direction."
+    return "You're starting to narrow it down."
+
+
+def _student_sounds_uncertain(state: SessionState) -> bool:
+    student_turns = [turn.text for turn in state.transcript if turn.speaker == "student"]
+    if not student_turns:
+        return False
+    return contains_any(student_turns[-1], UNCERTAINTY_HINTS)
+
+
+def _looks_like_single_sentence(text: str) -> bool:
+    sentence_endings = text.count(".") + text.count("?") + text.count("!")
+    return sentence_endings <= 1
