@@ -1,0 +1,156 @@
+template_id: project-1-data-exploration-draft
+version: 1
+title: Project 1 Data Exploration Reflection
+topic: Exploratory data analysis project write-up
+assignment:
+  statement: >
+    Use this guided reflection to draft a portfolio-ready story for a self-defined
+    data exploration project. Your responses should address the course rubric:
+    introduce the problem, introduce the data, explain preprocessing, discuss
+    visualization-based understanding, tell a coherent story about what you
+    learned, reflect on impact, list references, and explain where the full code
+    will be available.
+  deliverable: Project 1 reflection draft
+agenda_atoms:
+  - id: problem_definition
+    description: Student introduces the project problem and at least one question the analysis should answer.
+    required: true
+    acceptance_rules:
+      min_words: 30
+      required_terms: [problem, question]
+    linked_rubric_criteria: [problem_intro]
+  - id: dataset_context
+    description: Student explains where the dataset came from, what it contains, and names a relevant feature.
+    required: true
+    acceptance_rules:
+      min_words: 30
+      required_terms: [dataset, source, feature]
+    linked_rubric_criteria: [data_intro]
+  - id: preprocessing_rationale
+    description: Student describes at least one preprocessing step and why it was necessary.
+    required: true
+    acceptance_rules:
+      min_words: 30
+      required_terms: [preprocessing, because]
+    linked_rubric_criteria: [preprocessing]
+  - id: visualization_analysis
+    description: Student identifies a visualization and explains the insight it supports.
+    required: true
+    acceptance_rules:
+      min_words: 30
+      required_terms: [visualization, insight]
+    linked_rubric_criteria: [data_understanding]
+  - id: storytelling_takeaway
+    description: Student explains what they learned and whether the analysis answered the starting question.
+    required: true
+    acceptance_rules:
+      min_words: 30
+      required_terms: [learned, answer]
+    linked_rubric_criteria: [storytelling]
+  - id: impact_reflection
+    description: Student discusses possible harm and what data or perspectives may be missing.
+    required: true
+    acceptance_rules:
+      min_words: 30
+      required_terms: [harm, missing]
+    linked_rubric_criteria: [impact]
+  - id: references_plan
+    description: Student identifies the references they will cite, including a dataset link or source.
+    required: true
+    acceptance_rules:
+      min_words: 20
+      required_terms: [reference, link]
+    linked_rubric_criteria: [references]
+  - id: code_submission
+    description: Student explains where the full notebook or code will be available for review.
+    required: true
+    acceptance_rules:
+      min_words: 20
+      required_terms: [code, notebook, link]
+    linked_rubric_criteria: [code]
+question_bank:
+  - id: project_problem
+    prompt: What is the problem you want to explore, and what question should your project answer?
+    required: true
+    intent_tags: [warmup, problem]
+    linked_atoms: [problem_definition]
+  - id: data_source
+    prompt: Where did you find the dataset, what is it about, and which feature will matter most in your analysis?
+    required: true
+    intent_tags: [probe, data]
+    linked_atoms: [dataset_context]
+  - id: preprocessing_step
+    prompt: What preprocessing are you doing on the data, and why is that step necessary before analysis?
+    required: true
+    intent_tags: [probe, preprocessing]
+    linked_atoms: [preprocessing_rationale]
+  - id: visualization_plan
+    prompt: Which visualization will you rely on first, and what insight do you expect it to reveal?
+    required: true
+    intent_tags: [probe, visualization]
+    linked_atoms: [visualization_analysis]
+  - id: storytelling_claim
+    prompt: What have you learned so far, and does that answer your original question?
+    required: true
+    intent_tags: [probe, storytelling]
+    linked_atoms: [storytelling_takeaway]
+  - id: impact_limits
+    prompt: What possible harm could your visualizations cause, and what data or perspectives are missing from the project?
+    required: true
+    intent_tags: [probe, impact]
+    linked_atoms: [impact_reflection]
+  - id: references_list
+    prompt: Which references will you cite, and where will readers find the dataset link or source?
+    required: true
+    intent_tags: [probe, references]
+    linked_atoms: [references_plan]
+  - id: code_link
+    prompt: Where will you provide the full code notebook or scripts so an assessor can review your work?
+    required: true
+    intent_tags: [probe, code]
+    linked_atoms: [code_submission]
+  - id: surprise_followup
+    prompt: Did anything surprising stand out while exploring the data?
+    required: false
+    intent_tags: [probe, insight]
+    linked_atoms: [visualization_analysis, storytelling_takeaway]
+rubric:
+  - id: problem_intro
+    description: Introduce the problem and questions for the project. Reference rubric section 1 (10 pts).
+    scale_min: 0
+    scale_max: 3
+  - id: data_intro
+    description: Introduce the data source, context, and features. Reference rubric section 2 (10 pts).
+    scale_min: 0
+    scale_max: 3
+  - id: preprocessing
+    description: Explain preprocessing steps and why they were needed. Reference rubric section 3 (15 pts).
+    scale_min: 0
+    scale_max: 3
+  - id: data_understanding
+    description: Use visualizations to understand the data and connect back to the project question. Reference rubric section 4 (15 pts).
+    scale_min: 0
+    scale_max: 3
+  - id: storytelling
+    description: Tell a coherent story about what was learned and whether the questions were answered. Reference rubric section 5 (20 pts).
+    scale_min: 0
+    scale_max: 3
+  - id: impact
+    description: Reflect on harm, missing data, and missing perspectives. Reference rubric section 6 (5 pts).
+    scale_min: 0
+    scale_max: 3
+  - id: references
+    description: Include references for datasets, libraries, and other supporting sources. Reference rubric section 7 (5 pts).
+    scale_min: 0
+    scale_max: 3
+  - id: code
+    description: Make the full notebook or code accessible to reviewers. Reference rubric section 8.
+    scale_min: 0
+    scale_max: 3
+policies:
+  tone: supportive
+  max_turns: 18
+  min_student_words_per_turn: 20
+  allow_scaffolding: true
+  completion_mode: required_atoms_and_required_questions
+  final_summary_style: concise
