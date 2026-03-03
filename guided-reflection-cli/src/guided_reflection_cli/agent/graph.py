@@ -249,6 +249,7 @@ def build_graph(config: RunConfig, model: ChatOpenAI) -> StateGraph:
                 "transcript_tail": transcript_tail or "(none)",
                 "open_issues": session.open_issues,
                 "stall_counts": session.stall_counts,
+                "available_context": session.available_context,
                 "max_turns": session.agenda.max_turns,
                 "turn_index": session.turn_index,
             },
@@ -263,6 +264,7 @@ def build_graph(config: RunConfig, model: ChatOpenAI) -> StateGraph:
             target_atom_id=result.get("target_atom_id"),
             reason=result.get("reason", ""),
             needs_scaffold=bool(result.get("needs_scaffold", False)),
+            needs_context=bool(result.get("needs_context", False)),
             stop_signal=bool(result.get("stop_signal", False)),
         )
         if decision.target_atom_id is None and decision.action in {PlanAction.ASK_AGENDA, PlanAction.SCAFFOLD}:
@@ -310,7 +312,14 @@ def build_graph(config: RunConfig, model: ChatOpenAI) -> StateGraph:
             return state
         agenda_focus = agenda_focus_text(session, session.last_plan.target_atom_id)
         transcript_tail = "\n".join(f"{t.speaker}: {t.text}" for t in session.transcript[-4:])
-        memory_snippets = "; ".join(snippet.text for snippet in session.memory_snippets[:3])
+        memory_snippets = ""
+        notes_str = ""
+        if session.last_plan.needs_context:
+            memory_snippets = "; ".join(snippet.text for snippet in session.memory_snippets[:3]) or "(none)"
+            notes_str = "; ".join(session.notes) or "(none)"
+        else:
+            memory_snippets = "(not requested)"
+            notes_str = "(not requested)"
         prompt = render(
             PROMPTS["question"],
             {
@@ -318,8 +327,8 @@ def build_graph(config: RunConfig, model: ChatOpenAI) -> StateGraph:
                 "student_name": session.student.display_name,
                 "tone": session.agenda.tone,
                 "agenda_focus": agenda_focus,
-                "memory_snippets": memory_snippets or "(none)",
-                "notes": "; ".join(session.notes) or "(none)",
+                "memory_snippets": memory_snippets,
+                "notes": notes_str,
                 "transcript_tail": transcript_tail or "(none)",
                 "needs_scaffold": session.last_plan.needs_scaffold,
             },

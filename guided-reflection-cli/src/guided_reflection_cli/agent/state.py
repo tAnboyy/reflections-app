@@ -106,6 +106,7 @@ class PlanDecision(BaseModel):
     target_atom_id: str | None = None
     reason: str = ""
     needs_scaffold: bool = False
+    needs_context: bool = False
     stop_signal: bool = False
 
 
@@ -133,6 +134,7 @@ class SessionState(BaseModel):
     transcript: list[Turn] = Field(default_factory=list)
     stall_counts: dict[str, int] = Field(default_factory=dict)
     memory_snippets: list[MemorySnippet] = Field(default_factory=list)
+    available_context: dict[str, int] = Field(default_factory=dict)
     last_plan: PlanDecision | None = None
     stop_reason: StopReason | None = None
     notes: list[str] = Field(default_factory=list)
@@ -156,6 +158,10 @@ class SessionState(BaseModel):
             agenda_statuses={atom.id: AgendaStatus.UNKNOWN for atom in agenda.agenda_atoms},
             stall_counts={atom.id: 0 for atom in agenda.agenda_atoms},
             memory_snippets=memory_snippets,
+            available_context={
+                "notes_count": len(notes),
+                "memory_count": len(memory_snippets),
+            },
             notes=notes,
             output_dir=output_dir,
         )

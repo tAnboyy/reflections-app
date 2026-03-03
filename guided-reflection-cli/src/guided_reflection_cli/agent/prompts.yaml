@@ -14,6 +14,7 @@ planner: |
     - recent transcript (last 6 turns): {{transcript_tail}}
     - open issues: {{open_issues}}
     - stall_counts_by_atom: {{stall_counts}}
+    - available_context (notes_count, memory_count): {{available_context}}
     - max_turns: {{max_turns}}, turn_index: {{turn_index}}
   Choose the next action from:
     - ask_agenda: ask about a target agenda atom
@@ -21,6 +22,7 @@ planner: |
     - scaffold: provide optional scaffold for the same target atom
     - synthesize: ask for main takeaway / wrap-up
     - stop_now: end the session
+  Decide if you need extra student context (notes/submissions) for the next turn: set needs_context=true only when it will materially improve the question.
   Rules:
     - If a strong stop/exit cue appears, pick stop_now.
     - If the student has stalled twice on the same atom or replied with "can't think", "already said", or similar, pivot_topic or synthesize; avoid asking again.
@@ -28,7 +30,7 @@ planner: |
     - If a required atom has status UNKNOWN or PARTIALLY_MET, prefer ask_agenda; if the student stalled twice on it, switch to pivot_topic or scaffold.
     - If turn_index is within 2 of max_turns, prefer synthesize or stop_now.
     - Stay within max_turns.
-  Output JSON with keys: action (string), target_atom_id (string|null), reason (string), needs_scaffold (bool), stop_signal (bool).
+  Output JSON with keys: action (string), target_atom_id (string|null), reason (string), needs_scaffold (bool), needs_context (bool), stop_signal (bool).
 
 question: |
   You are the tutor. Craft exactly one open, warm question.
