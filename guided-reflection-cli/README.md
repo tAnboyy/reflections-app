@@ -1,18 +1,6 @@
-# Guided Reflection CLI
+# Guided Reflection CLI (lean agent)
 
-Separate terminal-first prototype for guided student reflection sessions.
-
-This subproject is intentionally isolated from the existing `backend/` and `frontend/` application. It uses educator-authored YAML templates, a LangGraph-style turn controller, local file storage, and a future-ready memory provider interface.
-
-## Features
-
-- Template-driven reflection sessions
-- Goal-directed agenda atom tracking
-- Required-question completion gates
-- Configurable question caps and early-stop handling
-- Interactive CLI flow for students
-- JSON and Markdown output artifacts per run
-- Offline-friendly fake provider for tests and local development
+LangGraph-based tutor that keeps a per-student memory store and uses a single prompts file. OpenAI Chat models only.
 
 ## Install
 
@@ -20,92 +8,43 @@ This subproject is intentionally isolated from the existing `backend/` and `fron
 cd guided-reflection-cli
 python -m venv .venv
 .venv\Scripts\activate
-pip install -e .[dev]
+pip install -e .
 ```
 
-## Environment
-
-Copy `.env.example` to `.env` if you want live model-backed question phrasing and final summaries.
-
-Key variables:
-
-- `LLM_PROVIDER`: `openai`, `ollama`, or `fake`
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL`
-- `OLLAMA_BASE_URL`
-- `OLLAMA_MODEL`
-
-Default runtime values:
-
-- `LLM_PROVIDER=openai`
-- `OPENAI_MODEL=gpt-4o-mini`
-
-For offline development and tests:
+## Run
 
 ```bash
-$env:LLM_PROVIDER="fake"
+# With a YAML agenda file
+guided-reflection run ^
+  --agenda .\examples\templates\new_template.yaml ^
+  --student-id student-001 ^
+  --profile .\examples\students\student_example.yaml ^
+  --submissions .\examples\students\latest.md
+
+# Or with a plain-text agenda paragraph
+guided-reflection run ^
+  --agenda-text "Reflect on your project idea and what success would look like." ^
+  --student-id student-001
 ```
 
-## Commands
+Options:
+- `--max-turns INT` (default 12 or agenda value)
+- `--model` (defaults to `OPENAI_MODEL` or `gpt-4o-mini`)
+- `--output-dir` (defaults to `data/runs`)
 
-```bash
-guided-reflection template init .\examples\templates\new_template.yaml
-guided-reflection template validate .\examples\templates\critical_reflection_example.yaml
-guided-reflection run --template .\examples\templates\critical_reflection_example.yaml --student .\examples\students\student_example.yaml
-guided-reflection run --template .\examples\templates\critical_reflection_example.yaml --student .\examples\students\student_example.yaml --max-questions 5
-```
+Required env: `OPENAI_API_KEY` (and optional `OPENAI_MODEL`).
 
-## Template Format
+## Data layout
+- `data/students/{id}/profile.yaml` (source of truth)
+- `data/students/{id}/notes.md` (running bullets)
+- `data/students/{id}/history.json` (recent runs with summaries)
+- `data/runs/{timestamp}_{template}_{student}/report.md`, `transcript.md`, `state.json`
 
-Templates are YAML files with:
+## Prompts
+All system, planner, question, evaluator, and summary prompts live in `src/guided_reflection_cli/agent/prompts.yaml`.
 
-- topic and assignment metadata
-- agenda atoms with acceptance rules
-- optional legacy question bank entries
-- rubric criteria
-- session policies
-
-See [examples/templates/critical_reflection_example.yaml](/d:/Projects_1/reflections-app/guided-reflection-cli/examples/templates/critical_reflection_example.yaml).
-
-## Where Educators Maintain The Agenda
-
-- In agenda-first templates, maintain the reflection agenda in `agenda_atoms`.
-- Each `agenda_atoms[*].description` is the primary educator-authored focus for a turn.
-- Each `agenda_atoms[*].acceptance_rules` defines what counts as enough evidence for that agenda item.
-- `question_bank` is now a legacy authoring path for older templates that still want exact student-facing prompts.
-- `policies` controls style and capture behavior, including `authoring_mode`, `conversation_style`, `max_questions`, and `max_turns`.
-
-## How Sessions Stop
-
-- The session completes when required agenda coverage is satisfied and any synthesis step is done.
-- `policies.max_questions` caps the number of assistant questions directly.
-- `policies.max_turns` remains a backstop on the number of student reply turns.
-- The CLI also finalizes early on `exit`, `quit`, keyboard interrupt, or short replies such as "can we stop" / "no more questions".
-
-See [examples/templates/new_template.yaml](/d:/Projects_1/reflections-app/guided-reflection-cli/examples/templates/new_template.yaml) for the new agenda-first format.
-
-## Student Profile Format
-
-Student profiles are YAML files with:
-
-- `student_id`
-- basic personalization preferences
-- strengths
-- growth areas
-- notes
-
-See [examples/students/student_example.yaml](/d:/Projects_1/reflections-app/guided-reflection-cli/examples/students/student_example.yaml).
-
-## Output Artifacts
-
-Each run writes a folder under `runs/` containing:
-
-- `result.json`
-- `report.md`
-- `transcript.md`
-
-## Limitations
-
-- Retrieval and PageIndex integration are deferred by design in this MVP.
-- The acceptance gate is deterministic and file-local.
-- `ollama` is reserved as a future provider mode and is not fully implemented yet.
+## Behavior highlights
+- Conversation director plans next move (ask, pivot, scaffold, synthesize, stop).
+- Gentle, non-grading tone; one open question per turn; optional scaffold when stuck.
+- Honors stop intent immediately (e.g., “please end”, “no idea please end this”).
+- Appends session bullets to student notes and history after each run.
