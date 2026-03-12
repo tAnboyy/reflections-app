@@ -78,7 +78,7 @@ export default function Chat() {
             const res = await fetch(`${API}/chat/message`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_id: sessionId, message: userMsg }),
+                body: JSON.stringify({ session_id: sessionId, message: userMsg, time_remaining: seconds }),
             });
             const data = await res.json();
             setMessages((prev) => [...prev, { role: 'assistant', content: data.reply }]);

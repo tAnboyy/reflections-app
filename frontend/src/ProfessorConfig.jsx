@@ -13,6 +13,7 @@ export default function ProfessorConfig() {
     const [depth, setDepth] = useState('surface');
     const [style, setStyle] = useState('supportive');
     const [mustApp, setMustApp] = useState(false);
+    const [customNotes, setCustomNotes] = useState('');
     const [saving, setSaving] = useState(false);
     const [status, setStatus] = useState('');
 
@@ -37,12 +38,14 @@ export default function ProfessorConfig() {
                 setDepth(cfg.expected_depth || 'surface');
                 setStyle(cfg.probing_style || 'supportive');
                 setMustApp(cfg.must_include_application || false);
+                setCustomNotes(cfg.custom_notes || '');
             })
             .catch(() => {
                 setTopics([]);
                 setDepth('surface');
                 setStyle('supportive');
                 setMustApp(false);
+                setCustomNotes('');
             });
     }, [selectedModule]);
 
@@ -94,6 +97,7 @@ export default function ProfessorConfig() {
             expected_depth: depth,
             probing_style: style,
             must_include_application: mustApp,
+            custom_notes: customNotes,
         };
         console.log('Save payload:', payload);
         try {
@@ -113,6 +117,7 @@ export default function ProfessorConfig() {
                 setDepth(data.expected_depth || depth);
                 setStyle(data.probing_style || style);
                 setMustApp(Boolean(data.must_include_application));
+                setCustomNotes(data.custom_notes || '');
             }
             setStatus('✓ Saved');
         } catch (e) {
@@ -205,6 +210,20 @@ export default function ProfessorConfig() {
                                     Must include application-based question
                                 </label>
                             </div>
+                        </div>
+
+                        <div className="form-group">
+                            <label>Custom Notes for LLM</label>
+                            <textarea
+                                rows={4}
+                                placeholder="e.g. Focus on the student's understanding of backpropagation before moving to other topics. Ensure they can explain the chain rule."
+                                value={customNotes}
+                                onChange={(e) => setCustomNotes(e.target.value)}
+                                style={{ width: '100%', resize: 'vertical' }}
+                            />
+                            <small style={{ color: 'var(--muted, #888)', fontSize: '0.8rem' }}>
+                                These instructions are given highest priority — the LLM will address them before other topics.
+                            </small>
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>

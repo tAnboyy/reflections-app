@@ -37,6 +37,7 @@ def start_chat(body: ChatStartRequest, db: Session = Depends(get_db)):
             "expected_depth": cfg.expected_depth,
             "probing_style": cfg.probing_style,
             "must_include_application": cfg.must_include_application,
+            "custom_notes": cfg.custom_notes or "",
         }
         llm = get_llm_provider()
         session_id, greeting = chat_service.start_session(
@@ -56,7 +57,7 @@ def start_chat(body: ChatStartRequest, db: Session = Depends(get_db)):
 def send_message(body: ChatMessageRequest):
     llm = get_llm_provider()
     try:
-        reply = chat_service.send_message(body.session_id, body.message, llm)
+        reply = chat_service.send_message(body.session_id, body.message, llm, body.time_remaining)
     except KeyError:
         raise HTTPException(404, "Session not found")
     return ChatMessageResponse(reply=reply)

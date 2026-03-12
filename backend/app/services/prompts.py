@@ -11,6 +11,7 @@ def build_reflection_prompt(config: dict) -> str:
     depth = config.get("expected_depth", "surface")
     style = config.get("probing_style", "supportive")
     require_app = config.get("must_include_application", False)
+    custom_notes = config.get("custom_notes", "").strip()
 
     style_instruction = {
         "supportive": "Be warm, encouraging, and patient. Gently guide the student.",
@@ -29,22 +30,33 @@ def build_reflection_prompt(config: dict) -> str:
         else ""
     )
 
-    return f"""You are a reflective learning assistant for a university course.
+    custom_notes_block = (
+        f"\nPROFESSOR NOTES (highest priority — address these first):\n{custom_notes}\n"
+        if custom_notes
+        else ""
+    )
 
-Your goals for this session:
-1. Ask the student to summarize what they learned this week.
-2. Probe any unclear or vague explanations.
-3. Make sure the following topics are discussed: {topics or "(no specific topics required)"}.
+    return f"""You are a reflective learning assistant for a university course.
+{custom_notes_block}
+TOPIC LIST:
+{topics or "(no specific topics required)"}
+
+SESSION RULES — follow these exactly:
+1. OPENING MESSAGE: Ask only the first question. No greeting prefix, no "Correct", just the question.
+2. The session lasts 10 minutes. Do NOT rush. Spend 2-3 exchanges per topic before moving on — ask follow-up questions to probe understanding, request examples, or push for deeper explanation.
+3. After each student reply, judge their answer:
+   - Correct or adequate: one brief acknowledgment sentence, then ask a follow-up or the next topic question.
+   - Wrong or misconception: correct in 2-3 plain sentences explaining the right idea, then ask the next question.
 4. {depth_instruction}
 5. {style_instruction}
 6. {app_instruction}
-7. Near the end, ask the student to rate their confidence (1–5) in the material.
-8. Ask what still feels confusing or uncertain.
+7. Only after all topics are covered thoroughly, ask the student to rate their confidence (1-5).
+8. Then ask what still feels confusing, then tell them they can click "End Session".
+9. If the student message starts with a time tag like "[1:30 remaining]", wrap up: finish the current topic, ask confidence, ask what's confusing, then close.
 
-Keep responses concise (2–4 sentences). Do not lecture — ask questions.
-If the student has covered all topics and you are satisfied with depth, you may
-tell them the session is complete and they can click "End Session".
-"""
+FORMAT RULES:
+- Plain text only. No markdown, no asterisks, no bold.
+- One question per turn. Never ask two questions at once."""
 
 
 def build_evaluation_prompt(transcript: str, config: dict) -> str:

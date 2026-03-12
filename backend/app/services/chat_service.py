@@ -47,13 +47,20 @@ def start_session(
     return session_id, greeting
 
 
-def send_message(session_id: str, user_msg: str, llm: LLMProvider) -> str:
+def send_message(session_id: str, user_msg: str, llm: LLMProvider, time_remaining: int = 600) -> str:
     """Append user message, call LLM, return assistant reply."""
     session = _sessions.get(session_id)
     if session is None:
         raise KeyError(f"Session {session_id} not found")
 
-    session.messages.append({"role": "user", "content": user_msg})
+    content = user_msg
+    if time_remaining <= 120:
+        mins = time_remaining // 60
+        secs = time_remaining % 60
+        time_str = f"{mins}:{secs:02d}"
+        content = f"[{time_str} remaining] {user_msg}"
+
+    session.messages.append({"role": "user", "content": content})
     reply = llm.generate(session.messages)
     session.messages.append({"role": "assistant", "content": reply})
     return reply

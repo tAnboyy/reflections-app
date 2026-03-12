@@ -46,6 +46,7 @@ class ModuleConfig(Base):
     expected_depth = Column(String, default="surface")    # surface | applied | analytical
     probing_style = Column(String, default="supportive")  # supportive | socratic
     must_include_application = Column(Boolean, default=False)
+    custom_notes = Column(Text, default="")
 
     module = relationship("Module", back_populates="config")
 

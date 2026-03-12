@@ -21,6 +21,7 @@ class ModuleConfigCreate(BaseModel):
     expected_depth: str = "surface"       # surface | applied | analytical
     probing_style: str = "supportive"     # supportive | socratic
     must_include_application: bool = False
+    custom_notes: str = ""
 
 class ModuleConfigOut(ModuleConfigCreate):
     id: str
@@ -40,6 +41,7 @@ class ChatStartResponse(BaseModel):
 class ChatMessageRequest(BaseModel):
     session_id: str
     message: str
+    time_remaining: int = 600  # seconds remaining in session
 
 class ChatMessageResponse(BaseModel):
     reply: str

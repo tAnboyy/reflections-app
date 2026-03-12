@@ -63,9 +63,9 @@ export default function Dashboard() {
                                 {rows.map((r) => (
                                     <tr key={r.conversation_id}>
                                         <td>{r.student_anonymized_id}</td>
-                                        <td><span className={scoreCls(r.reflection_depth_score)}>{r.reflection_depth_score.toFixed(2)}</span></td>
+                                        <td><span className={scoreCls(r.reflection_depth_score)}>{r.reflection_depth_score.toFixed(1)}/1</span></td>
                                         <td><span className={scoreCls(r.confidence_level, 5)}>{r.confidence_level}/5</span></td>
-                                        <td><span className={scoreCls(r.engagement_score)}>{r.engagement_score.toFixed(2)}</span></td>
+                                        <td><span className={scoreCls(r.engagement_score)}>{r.engagement_score.toFixed(1)}/1</span></td>
                                         <td>{r.missing_topics.length ? r.missing_topics.map((t) => <span key={t} className="tag">{t}</span>) : '—'}</td>
                                         <td>{r.misconceptions.length ? r.misconceptions.map((t, i) => <span key={i} className="tag">{t}</span>) : '—'}</td>
                                         <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{new Date(r.created_at).toLocaleDateString()}</td>
