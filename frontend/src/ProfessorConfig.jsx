@@ -10,11 +10,14 @@ export default function ProfessorConfig() {
     // Config fields
     const [topics, setTopics] = useState([]);
     const [topicInput, setTopicInput] = useState('');
+    const [subTopics, setSubTopics] = useState([]);
+    const [subTopicInput, setSubTopicInput] = useState('');
     const [depth, setDepth] = useState('surface');
     const [style, setStyle] = useState('supportive');
     const [mustApp, setMustApp] = useState(false);
     const [customNotes, setCustomNotes] = useState('');
     const [saving, setSaving] = useState(false);
+    const [generating, setGenerating] = useState(false);
     const [status, setStatus] = useState('');
 
     useEffect(() => {
@@ -35,6 +38,7 @@ export default function ProfessorConfig() {
             })
             .then((cfg) => {
                 setTopics(cfg.required_topics || []);
+                setSubTopics(cfg.sub_topics || []);
                 setDepth(cfg.expected_depth || 'surface');
                 setStyle(cfg.probing_style || 'supportive');
                 setMustApp(cfg.must_include_application || false);
@@ -42,6 +46,7 @@ export default function ProfessorConfig() {
             })
             .catch(() => {
                 setTopics([]);
+                setSubTopics([]);
                 setDepth('surface');
                 setStyle('supportive');
                 setMustApp(false);
@@ -65,18 +70,12 @@ export default function ProfessorConfig() {
     const addTopic = () => {
         const t = topicInput.trim();
         if (t && !topics.includes(t)) {
-            console.log('Adding topic:', t, 'Current topics:', topics);
-            setTopics((prev) => {
-                const updated = [...prev, t];
-                console.log('Updated topics:', updated);
-                return updated;
-            });
+            setTopics((prev) => [...prev, t]);
             setTopicInput('');
         }
     };
 
     const removeTopic = (t) => {
-        console.log('Removing topic:', t);
         setTopics((prev) => prev.filter((x) => x !== t));
     };
 
@@ -87,19 +86,58 @@ export default function ProfessorConfig() {
         }
     };
 
+    const addSubTopic = () => {
+        const t = subTopicInput.trim();
+        if (t && !subTopics.includes(t)) {
+            setSubTopics((prev) => [...prev, t]);
+            setSubTopicInput('');
+        }
+    };
+
+    const removeSubTopic = (t) => {
+        setSubTopics((prev) => prev.filter((x) => x !== t));
+    };
+
+    const handleSubTopicKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addSubTopic();
+        }
+    };
+
+    const handleAutoGenerate = async () => {
+        if (!topics.length) return;
+        setGenerating(true);
+        setStatus('');
+        try {
+            const res = await fetch(`${API}/modules/subtopics/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ main_topics: topics }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Generation failed');
+            setSubTopics(data.sub_topics || []);
+            setStatus('Sub-topics generated');
+        } catch (e) {
+            setStatus('✗ ' + e.message);
+        } finally {
+            setGenerating(false);
+        }
+    };
+
     const handleSave = async () => {
         if (!selectedModule) return;
-        console.log('Saving config with topics:', topics);
         setSaving(true);
         setStatus('');
         const payload = {
             required_topics: topics,
+            sub_topics: subTopics,
             expected_depth: depth,
             probing_style: style,
             must_include_application: mustApp,
             custom_notes: customNotes,
         };
-        console.log('Save payload:', payload);
         try {
             const res = await fetch(`${API}/modules/${selectedModule}/config`, {
                 method: 'POST',
@@ -111,9 +149,9 @@ export default function ProfessorConfig() {
                 const msg = (data && data.detail) || 'Save failed';
                 throw new Error(msg);
             }
-            // Update local state from server's authoritative response
             if (data) {
                 setTopics(data.required_topics || []);
+                setSubTopics(data.sub_topics || []);
                 setDepth(data.expected_depth || depth);
                 setStyle(data.probing_style || style);
                 setMustApp(Boolean(data.must_include_application));
@@ -162,7 +200,7 @@ export default function ProfessorConfig() {
                 {selectedModule && (
                     <>
                         <div className="form-group">
-                            <label>Required Topics</label>
+                            <label>Main Topics</label>
                             <div className="tag-input-wrapper">
                                 {topics.map((t) => (
                                     <span key={t} className="tag">
@@ -178,6 +216,38 @@ export default function ProfessorConfig() {
                                     onKeyDown={handleTopicKeyDown}
                                 />
                             </div>
+                        </div>
+
+                        <div className="form-group">
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                                <label style={{ marginBottom: 0 }}>Sub Topics</label>
+                                <button
+                                    className="btn btn-outline"
+                                    style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem' }}
+                                    onClick={handleAutoGenerate}
+                                    disabled={!topics.length || generating}
+                                >
+                                    {generating ? 'Generating…' : 'Auto-generate'}
+                                </button>
+                            </div>
+                            <div className="tag-input-wrapper">
+                                {subTopics.map((t) => (
+                                    <span key={t} className="tag">
+                                        {t}
+                                        <span className="remove" onClick={() => removeSubTopic(t)}>×</span>
+                                    </span>
+                                ))}
+                                <input
+                                    type="text"
+                                    placeholder="Add sub-topic + Enter"
+                                    value={subTopicInput}
+                                    onChange={(e) => setSubTopicInput(e.target.value)}
+                                    onKeyDown={handleSubTopicKeyDown}
+                                />
+                            </div>
+                            <small style={{ color: 'var(--muted, #888)', fontSize: '0.8rem' }}>
+                                Chat questions will follow these sub-topics in order.
+                            </small>
                         </div>
 
                         <div className="row">

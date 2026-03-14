@@ -18,6 +18,7 @@ class ModuleOut(BaseModel):
 # ── ModuleConfig ─────────────────────────────────────────────────────────────
 class ModuleConfigCreate(BaseModel):
     required_topics: list[str] = []
+    sub_topics: list[str] = []
     expected_depth: str = "surface"       # surface | applied | analytical
     probing_style: str = "supportive"     # supportive | socratic
     must_include_application: bool = False
@@ -37,6 +38,7 @@ class ChatStartRequest(BaseModel):
 class ChatStartResponse(BaseModel):
     session_id: str
     greeting: str
+    total_questions: int = 0
 
 class ChatMessageRequest(BaseModel):
     session_id: str
@@ -45,6 +47,16 @@ class ChatMessageRequest(BaseModel):
 
 class ChatMessageResponse(BaseModel):
     reply: str
+    question_index: int = 0
+    total_questions: int = 0
+    is_bonus_phase: bool = False
+
+
+class SubtopicGenerateRequest(BaseModel):
+    main_topics: list[str]
+
+class SubtopicGenerateResponse(BaseModel):
+    sub_topics: list[str]
 
 class ChatEndRequest(BaseModel):
     session_id: str
