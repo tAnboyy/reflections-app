@@ -1,0 +1,13 @@
+student_id: student-001
+display_name: Alex
+course: Introduction to Data Mining
+standing_summary: No summary available.
+preferences:
+  challenge_level: easy
+  tone: encouraging
+strengths:
+  - Organizes ideas clearly once the topic is defined.
+growth_areas:
+  - Needs help turning exploratory analysis into a polished narrative.
+notes:
+  - Prefers examples grounded in coursework and portfolio assignments.

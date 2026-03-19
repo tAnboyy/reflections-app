@@ -1,9 +1,12 @@
 """FastAPI application entry point."""
 
+import asyncio
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import OperationalError
 
 from app.database import engine, Base
 from app.routes import modules, config, chat, analytics
@@ -11,8 +14,18 @@ from app.routes import modules, config, chat, analytics
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables on startup (good enough for prototype)
-    Base.metadata.create_all(bind=engine)
+    max_retries = int(os.getenv("DB_STARTUP_MAX_RETRIES", "20"))
+    retry_delay_seconds = float(os.getenv("DB_STARTUP_RETRY_DELAY_SECONDS", "1"))
+
+    # Retry DB initialization to tolerate container startup races.
+    for attempt in range(1, max_retries + 1):
+        try:
+            Base.metadata.create_all(bind=engine)
+            break
+        except OperationalError:
+            if attempt == max_retries:
+                raise
+            await asyncio.sleep(retry_delay_seconds)
     yield
 
 
