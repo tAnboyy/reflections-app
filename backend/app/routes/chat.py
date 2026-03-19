@@ -1,10 +1,14 @@
 """Routes — Reflection Chat (start / message / end)."""
 
+from uuid import uuid4
+
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import desc
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import ModuleConfig, Conversation, Student
+from app.models import ModuleConfig, Conversation, Student, ReflectionAnalytics
 from app.schemas import (
     ChatStartRequest, ChatStartResponse,
     ChatMessageRequest, ChatMessageResponse,
@@ -17,15 +21,30 @@ from app.services.evaluation import evaluate_transcript
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
+def _generate_anonymized_id() -> str:
+    """Generate a compact, collision-resistant anonymized student ID."""
+    return f"anon-{uuid4().hex[:12]}"
+
+
 @router.post("/start", response_model=ChatStartResponse)
 def start_chat(body: ChatStartRequest, db: Session = Depends(get_db)):
     try:
         # Ensure student exists (auto-create for prototype convenience)
         student = db.query(Student).filter(Student.id == body.student_id).first()
         if not student:
-            student = Student(id=body.student_id, anonymized_id=f"anon-{body.student_id[:8]}")
+            student = Student(id=body.student_id, anonymized_id=_generate_anonymized_id())
             db.add(student)
-            db.commit()
+            try:
+                db.commit()
+            except IntegrityError:
+                # Roll back and re-check in case another request inserted the same student.
+                db.rollback()
+                student = db.query(Student).filter(Student.id == body.student_id).first()
+                if not student:
+                    # Extremely unlikely: anonymized_id collision for a different student.
+                    student = Student(id=body.student_id, anonymized_id=_generate_anonymized_id())
+                    db.add(student)
+                    db.commit()
 
         # Load module config
         cfg = db.query(ModuleConfig).filter(ModuleConfig.module_id == body.module_id).first()
@@ -34,18 +53,40 @@ def start_chat(body: ChatStartRequest, db: Session = Depends(get_db)):
 
         config_dict = {
             "required_topics": cfg.required_topics or [],
+            "sub_topics": cfg.sub_topics or [],
             "expected_depth": cfg.expected_depth,
             "probing_style": cfg.probing_style,
             "must_include_application": cfg.must_include_application,
+            "custom_notes": cfg.custom_notes or "",
         }
+
+        # Cross-session memory: query past weak areas for this student+module
+        past = (
+            db.query(ReflectionAnalytics)
+            .join(Conversation, ReflectionAnalytics.conversation_id == Conversation.id)
+            .filter(
+                Conversation.student_id == body.student_id,
+                Conversation.module_id == body.module_id,
+            )
+            .order_by(desc(Conversation.created_at))
+            .limit(3)
+            .all()
+        )
+        past_weak = list({t for r in past for t in (r.missing_topics or [])})
+
         llm = get_llm_provider()
-        session_id, greeting = chat_service.start_session(
+        session_id, greeting, total_questions = chat_service.start_session(
             student_id=body.student_id,
             module_id=body.module_id,
             config=config_dict,
             llm=llm,
+            past_weak_areas=past_weak,
         )
-        return ChatStartResponse(session_id=session_id, greeting=greeting)
+        return ChatStartResponse(
+            session_id=session_id,
+            greeting=greeting,
+            total_questions=total_questions,
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -56,10 +97,17 @@ def start_chat(body: ChatStartRequest, db: Session = Depends(get_db)):
 def send_message(body: ChatMessageRequest):
     llm = get_llm_provider()
     try:
-        reply = chat_service.send_message(body.session_id, body.message, llm)
+        reply, question_index, total_questions, is_bonus_phase = chat_service.send_message(
+            body.session_id, body.message, llm, body.time_remaining
+        )
     except KeyError:
         raise HTTPException(404, "Session not found")
-    return ChatMessageResponse(reply=reply)
+    return ChatMessageResponse(
+        reply=reply,
+        question_index=question_index,
+        total_questions=total_questions,
+        is_bonus_phase=is_bonus_phase,
+    )
 
 
 @router.post("/end", response_model=ChatEndResponse)

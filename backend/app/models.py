@@ -43,9 +43,11 @@ class ModuleConfig(Base):
     module_id = Column(String, ForeignKey("modules.id"), unique=True, nullable=False)
 
     required_topics = Column(JSON, default=list)          # ["topic1", "topic2"]
+    sub_topics = Column(JSON, default=list)               # drives chat questions
     expected_depth = Column(String, default="surface")    # surface | applied | analytical
     probing_style = Column(String, default="supportive")  # supportive | socratic
     must_include_application = Column(Boolean, default=False)
+    custom_notes = Column(Text, default="")
 
     module = relationship("Module", back_populates="config")
 

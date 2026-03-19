@@ -13,6 +13,10 @@ export default function Chat() {
     const [loading, setLoading] = useState(false);
     const [seconds, setSeconds] = useState(600); // 10 min
     const [evaluation, setEvaluation] = useState(null);
+    const [questionIndex, setQuestionIndex] = useState(0);
+    const [totalQuestions, setTotalQuestions] = useState(0);
+    const [isBonusPhase, setIsBonusPhase] = useState(false);
+    const [paused, setPaused] = useState(false);
     const bottomRef = useRef(null);
 
     // Fetch modules on mount
@@ -25,14 +29,14 @@ export default function Chat() {
 
     // Timer
     useEffect(() => {
-        if (phase !== 'chatting') return;
+        if (phase !== 'chatting' || paused) return;
         if (seconds <= 0) {
             handleEnd();
             return;
         }
         const id = setInterval(() => setSeconds((s) => s - 1), 1000);
         return () => clearInterval(id);
-    }, [phase, seconds]);
+    }, [phase, seconds, paused]);
 
     // Auto-scroll
     useEffect(() => {
@@ -59,6 +63,9 @@ export default function Chat() {
             if (!res.ok) throw new Error(data.detail || 'Failed');
             setSessionId(data.session_id);
             setMessages([{ role: 'assistant', content: data.greeting }]);
+            setTotalQuestions(data.total_questions || 0);
+            setQuestionIndex(0);
+            setIsBonusPhase(false);
             setPhase('chatting');
         } catch (e) {
             alert(e.message);
@@ -78,10 +85,15 @@ export default function Chat() {
             const res = await fetch(`${API}/chat/message`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_id: sessionId, message: userMsg }),
+                body: JSON.stringify({ session_id: sessionId, message: userMsg, time_remaining: seconds }),
             });
             const data = await res.json();
             setMessages((prev) => [...prev, { role: 'assistant', content: data.reply }]);
+            if (data.total_questions > 0) {
+                setQuestionIndex(data.question_index);
+                setTotalQuestions(data.total_questions);
+                setIsBonusPhase(data.is_bonus_phase);
+            }
         } catch {
             setMessages((prev) => [...prev, { role: 'assistant', content: '⚠ Error reaching server.' }]);
         } finally {
@@ -155,7 +167,16 @@ export default function Chat() {
                 ) : (
                     <p className="empty">Evaluating transcript…</p>
                 )}
-                <button className="btn btn-outline" onClick={() => { setPhase('setup'); setMessages([]); setSeconds(600); setEvaluation(null); }}>
+                <button className="btn btn-outline" onClick={() => {
+                    setPhase('setup');
+                    setMessages([]);
+                    setSeconds(600);
+                    setEvaluation(null);
+                    setQuestionIndex(0);
+                    setTotalQuestions(0);
+                    setIsBonusPhase(false);
+                    setPaused(false);
+                }}>
                     New Session
                 </button>
             </div>
@@ -167,13 +188,47 @@ export default function Chat() {
         <div className="chat-container">
             <div className="chat-header">
                 <span style={{ fontWeight: 600 }}>Reflection Session</span>
-                <span className={`timer ${seconds <= 60 ? 'warning' : ''}`}>{fmt(seconds)}</span>
-                <button className="btn btn-danger" onClick={handleEnd}>End Session</button>
+                {totalQuestions > 0 && (
+                    isBonusPhase
+                        ? <span style={{
+                            fontSize: '0.75rem',
+                            padding: '0.15rem 0.5rem',
+                            borderRadius: '999px',
+                            background: 'var(--accent, #6c63ff)',
+                            color: '#fff',
+                            fontWeight: 500,
+                          }}>Bonus Questions</span>
+                        : <span style={{
+                            fontSize: '0.8rem',
+                            fontVariantNumeric: 'tabular-nums',
+                            color: 'var(--text-muted, #888)',
+                          }}>{questionIndex + 1}/{totalQuestions}</span>
+                )}
+                <span className={`timer ${seconds <= 60 && !paused ? 'warning' : ''}`}>{fmt(seconds)}</span>
+                {seconds <= 60 && (
+                    <button
+                        className="btn btn-outline"
+                        style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem' }}
+                        onClick={() => setPaused((p) => !p)}
+                    >
+                        {paused ? 'Resume' : 'Pause'}
+                    </button>
+                )}
+                <button
+                    className="btn btn-danger"
+                    onClick={handleEnd}
+                    disabled={totalQuestions > 0 && !isBonusPhase}
+                    title={totalQuestions > 0 && !isBonusPhase ? 'Complete all questions first' : ''}
+                >End Session</button>
             </div>
 
             <div className="messages">
                 {messages.map((m, i) => (
-                    <div key={i} className={`message ${m.role}`}>{m.content}</div>
+                    <div key={i} className={`message ${m.role}`}>
+                        {m.content.split('\n\n').map((para, j) => (
+                            <p key={j} style={{ margin: j === 0 ? 0 : '0.6rem 0 0' }}>{para}</p>
+                        ))}
+                    </div>
                 ))}
                 {loading && <div className="message assistant" style={{ opacity: 0.5 }}>Thinking…</div>}
                 <div ref={bottomRef} />

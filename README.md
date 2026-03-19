@@ -8,10 +8,27 @@ An AI-powered reflection chatbot for academic use. Professors configure modules 
 - Node.js 18+
 - A Supabase project (or local PostgreSQL via Docker)
 
+### Node.js
+Can be downloaded at https://nodejs.org/en/download
+
+### Supabase
+Can be downloaded at https://supabase.com/docs/guides/local-development/cli/getting-started
+
+Use these commands to create Docker images.
+
+```
+supabase init
+supabase start
+```
+
+Afterwards, just run `supabase start` to start it up again.
+Run `supabase stop` to stop it when done.
+
 ## Backend
 
 ```bash
 cd backend
+python3 -m venv venv
 source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload

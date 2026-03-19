@@ -1,11 +1,16 @@
-"""Routes — ModuleConfig CRUD."""
+"""Routes — ModuleConfig CRUD + subtopic generation."""
+
+import json
+import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import ModuleConfig, Module
-from app.schemas import ModuleConfigCreate, ModuleConfigOut
+from app.schemas import ModuleConfigCreate, ModuleConfigOut, SubtopicGenerateRequest, SubtopicGenerateResponse
+from app.services.llm import get_llm_provider
+from app.services.prompts import build_subtopic_generation_prompt
 
 router = APIRouter(prefix="/api/modules", tags=["config"])
 
@@ -49,3 +54,22 @@ def update_config(module_id: str, body: ModuleConfigCreate, db: Session = Depend
     db.commit()
     db.refresh(cfg)
     return cfg
+
+
+@router.post("/subtopics/generate", response_model=SubtopicGenerateResponse)
+def generate_subtopics(body: SubtopicGenerateRequest):
+    """Auto-generate sub-topics from main topics using LLM."""
+    if not body.main_topics:
+        raise HTTPException(400, "main_topics must not be empty")
+    llm = get_llm_provider()
+    prompt = build_subtopic_generation_prompt(body.main_topics)
+    try:
+        raw = llm.generate([{"role": "user", "content": prompt}])
+        text = re.sub(r"^```[a-z]*\n?", "", raw.strip(), flags=re.MULTILINE).strip("`").strip()
+        sub_topics = json.loads(text)
+        if not isinstance(sub_topics, list):
+            raise ValueError("Not a list")
+        sub_topics = [str(t).strip() for t in sub_topics if str(t).strip()]
+    except Exception as e:
+        raise HTTPException(500, f"Failed to generate sub-topics: {str(e)}")
+    return SubtopicGenerateResponse(sub_topics=sub_topics)
