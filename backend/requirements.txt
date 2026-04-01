@@ -6,3 +6,6 @@ python-dotenv
 openai
 requests
 pydantic
+pandas
+python-multipart
+sentence-transformers
