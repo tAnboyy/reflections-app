@@ -17,7 +17,7 @@ def list_modules(db: Session = Depends(get_db)):
 
 @router.post("", response_model=ModuleOut, status_code=201)
 def create_module(body: ModuleCreate, db: Session = Depends(get_db)):
-    module = Module(name=body.name)
+    module = Module(name=body.name, module_type=body.module_type)
     db.add(module)
     db.commit()
     db.refresh(module)
