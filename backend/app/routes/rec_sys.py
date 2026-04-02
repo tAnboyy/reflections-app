@@ -4,8 +4,12 @@ from __future__ import annotations
 import io
 
 import pandas as pd
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy.orm import Session
 
+from app.database import get_db
+from app.models import ModuleConfig
+from app.schemas import MilestoneReflectRequest, MilestoneReflectResponse
 from app.services.llm import get_llm_provider
 from app.services.rec_sys_service import run_llm_scs, run_scs
 
@@ -75,3 +79,37 @@ async def run_rec_sys(
         raise HTTPException(status_code=500, detail=str(exc))
 
     return {"results": results}
+
+
+@router.post("/milestone", response_model=MilestoneReflectResponse)
+def run_milestone(body: MilestoneReflectRequest, db: Session = Depends(get_db)):
+    """
+    Run SCS for a single student reflection against a milestone module's historical data.
+    """
+    cfg = db.query(ModuleConfig).filter(ModuleConfig.module_id == body.module_id).first()
+    if not cfg:
+        raise HTTPException(404, "Module config not found")
+    if not cfg.milestone_historical_data:
+        raise HTTPException(400, "No historical data uploaded for this module")
+
+    try:
+        hist_df = pd.read_csv(io.StringIO(cfg.milestone_historical_data))
+    except Exception as exc:
+        raise HTTPException(500, f"Failed to parse stored historical data: {exc}")
+
+    hist_df.dropna(subset=["name", "challenge", "solution"], inplace=True)
+    if hist_df.empty:
+        raise HTTPException(400, "Historical data has no valid rows")
+
+    curr_df = pd.DataFrame([{
+        "Full Name": body.student_name or "Student",
+        "Email Address": body.student_email,
+        "student's reflection": body.reflection,
+    }])
+
+    try:
+        results = run_scs(hist_df, curr_df)
+    except RuntimeError as exc:
+        raise HTTPException(500, str(exc))
+
+    return MilestoneReflectResponse(similar=results[0]["similar"] if results else [])

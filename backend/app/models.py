@@ -30,6 +30,7 @@ class Module(Base):
 
     id = Column(String, primary_key=True, default=_uuid)
     name = Column(String, nullable=False)
+    module_type = Column(String, default="topic_based", server_default="topic_based")  # topic_based | milestone_based
 
     config = relationship("ModuleConfig", back_populates="module", uselist=False)
     conversations = relationship("Conversation", back_populates="module")
@@ -48,6 +49,12 @@ class ModuleConfig(Base):
     probing_style = Column(String, default="supportive")  # supportive | socratic
     must_include_application = Column(Boolean, default=False)
     custom_notes = Column(Text, default="")
+    milestone_prompt = Column(Text, default="", server_default="")   # question shown to student
+    milestone_historical_data = Column(Text, default="", server_default="")  # raw CSV content
+
+    @property
+    def has_historical_data(self) -> bool:
+        return bool(self.milestone_historical_data)
 
     module = relationship("Module", back_populates="config")
 

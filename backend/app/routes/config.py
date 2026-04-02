@@ -1,9 +1,11 @@
-"""Routes — ModuleConfig CRUD + subtopic generation."""
+"""Routes — ModuleConfig CRUD + subtopic generation + milestone historical data."""
 
+import io
 import json
 import re
 
-from fastapi import APIRouter, Depends, HTTPException
+import pandas as pd
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -25,11 +27,9 @@ def get_config(module_id: str, db: Session = Depends(get_db)):
 
 @router.post("/{module_id}/config", response_model=ModuleConfigOut, status_code=201)
 def create_config(module_id: str, body: ModuleConfigCreate, db: Session = Depends(get_db)):
-    # Ensure module exists
     module = db.query(Module).filter(Module.id == module_id).first()
     if not module:
         raise HTTPException(404, "Module not found")
-    # Upsert — replace existing config if present
     existing = db.query(ModuleConfig).filter(ModuleConfig.module_id == module_id).first()
     if existing:
         for key, val in body.model_dump().items():
@@ -54,6 +54,45 @@ def update_config(module_id: str, body: ModuleConfigCreate, db: Session = Depend
     db.commit()
     db.refresh(cfg)
     return cfg
+
+
+@router.post("/{module_id}/config/historical", status_code=200)
+async def upload_historical_data(
+    module_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Upload historical student CSV for a milestone-based module."""
+    module = db.query(Module).filter(Module.id == module_id).first()
+    if not module:
+        raise HTTPException(404, "Module not found")
+
+    raw = await file.read()
+    try:
+        try:
+            content = raw.decode("utf-8")
+            df = pd.read_csv(io.StringIO(content))
+        except UnicodeDecodeError:
+            content = raw.decode("latin-1")
+            df = pd.read_csv(io.StringIO(content))
+    except Exception as exc:
+        raise HTTPException(400, f"Failed to parse CSV: {exc}")
+
+    missing = {"name", "challenge", "solution"} - set(df.columns)
+    if missing:
+        raise HTTPException(
+            400,
+            f"CSV missing columns: {missing}. Required: name, challenge, solution",
+        )
+
+    # Upsert config
+    cfg = db.query(ModuleConfig).filter(ModuleConfig.module_id == module_id).first()
+    if not cfg:
+        cfg = ModuleConfig(module_id=module_id)
+        db.add(cfg)
+    cfg.milestone_historical_data = content
+    db.commit()
+    return {"rows": len(df), "columns": list(df.columns)}
 
 
 @router.post("/subtopics/generate", response_model=SubtopicGenerateResponse)

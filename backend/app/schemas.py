@@ -8,10 +8,12 @@ from pydantic import BaseModel
 # ── Module ───────────────────────────────────────────────────────────────────
 class ModuleCreate(BaseModel):
     name: str
+    module_type: str = "topic_based"  # topic_based | milestone_based
 
 class ModuleOut(BaseModel):
     id: str
     name: str
+    module_type: str = "topic_based"
     model_config = {"from_attributes": True}
 
 
@@ -23,11 +25,25 @@ class ModuleConfigCreate(BaseModel):
     probing_style: str = "supportive"     # supportive | socratic
     must_include_application: bool = False
     custom_notes: str = ""
+    milestone_prompt: str = ""
 
 class ModuleConfigOut(ModuleConfigCreate):
     id: str
     module_id: str
+    has_historical_data: bool = False
     model_config = {"from_attributes": True}
+
+
+# ── Milestone ─────────────────────────────────────────────────────────────────
+class MilestoneReflectRequest(BaseModel):
+    module_id: str
+    student_name: str = ""
+    student_email: str = ""
+    reflection: str
+
+
+class MilestoneReflectResponse(BaseModel):
+    similar: list[dict]
 
 
 # ── Chat ─────────────────────────────────────────────────────────────────────

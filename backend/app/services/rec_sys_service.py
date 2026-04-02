@@ -28,14 +28,8 @@ def _get_embedding_model():
 
 
 def _cosine_scores(historical_embeddings, current_embedding) -> np.ndarray:
-    try:
-        from sentence_transformers import util
-        return util.pytorch_cos_sim(historical_embeddings, current_embedding).numpy().flatten()
-    except Exception:
-        hist = np.array(historical_embeddings)
-        curr = np.array(current_embedding)
-        norms = np.linalg.norm(hist, axis=1) * np.linalg.norm(curr) + 1e-10
-        return (hist @ curr) / norms
+    from sentence_transformers import util
+    return util.pytorch_cos_sim(historical_embeddings, current_embedding).cpu().numpy().flatten()
 
 
 def run_scs(historical_df: pd.DataFrame, current_df: pd.DataFrame, k: int = 5) -> list[dict[str, Any]]:
