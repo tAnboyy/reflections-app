@@ -69,4 +69,4 @@ The app runs at `http://localhost:5173`. Vite proxies all `/api/*` requests to t
 docker compose up --build
 ```
 
-Starts PostgreSQL on `5432`, backend on `8000`, and frontend on `3000`.
+Starts the backend on `8000` and frontend on `3000`, using the `DATABASE_URL` from the project `.env`.
