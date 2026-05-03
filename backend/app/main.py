@@ -10,6 +10,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.database import engine, Base
 from app.routes import modules, config, chat, analytics, rec_sys
+from app.agents import runner as agent_runner
 
 
 @asynccontextmanager
@@ -26,6 +27,9 @@ async def lifespan(app: FastAPI):
             if attempt == max_retries:
                 raise
             await asyncio.sleep(retry_delay_seconds)
+
+    # Set up LangGraph checkpointer tables and compile graphs.
+    agent_runner.setup_checkpointer()
     yield
 
 
