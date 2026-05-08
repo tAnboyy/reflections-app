@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from langchain_core.runnables import RunnableConfig
+
 from app.agents.state import ReflectionState
 from app.models import Conversation
 from app.services.prompts import build_reflection_prompt
 
 
-def build_session(state: ReflectionState, config: dict) -> dict:
+def build_session(state: ReflectionState, config: RunnableConfig) -> dict:
     """Build system prompt + initial messages, set greeting."""
     questions = state["questions"]
     past_weak_areas = state.get("past_weak_areas") or []
@@ -39,9 +41,9 @@ def build_session(state: ReflectionState, config: dict) -> dict:
     }
 
 
-def format_transcript(state: ReflectionState, config: dict) -> dict:
+def format_transcript(state: ReflectionState, config: RunnableConfig) -> dict:
     """Strip system messages and join turns into a readable transcript. Persists Conversation."""
-    db = config["db"]
+    db = config["configurable"]["db"]
     lines = []
     for msg in state["messages"]:
         role = msg["role"].upper()

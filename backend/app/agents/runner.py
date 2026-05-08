@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import psycopg
 from langgraph.checkpoint.postgres import PostgresSaver
 
 from app.agents.graphs.init_graph import build_init_graph
@@ -9,6 +10,7 @@ from app.agents.graphs.message_graph import build_message_graph
 from app.agents.graphs.end_graph import build_end_graph
 from app.database import DATABASE_URL
 
+_conn: psycopg.Connection | None = None
 _checkpointer: PostgresSaver | None = None
 _init_graph = None
 _message_graph = None
@@ -17,12 +19,15 @@ _end_graph = None
 
 def setup_checkpointer() -> None:
     """Create checkpoint tables and compile graphs. Called once at app startup."""
-    global _checkpointer, _init_graph, _message_graph, _end_graph
+    global _conn, _checkpointer, _init_graph, _message_graph, _end_graph
 
     # PostgresSaver expects a plain postgresql:// URL (not the +psycopg SQLAlchemy variant)
     sync_url = DATABASE_URL.replace("postgresql+psycopg://", "postgresql://")
 
-    _checkpointer = PostgresSaver.from_conn_string(sync_url)
+    # prepare_threshold=0 disables psycopg3 prepared statements, required for
+    # Supabase PgBouncer transaction-mode pooler (port 6543).
+    _conn = psycopg.connect(sync_url, prepare_threshold=0)
+    _checkpointer = PostgresSaver(_conn)
     _checkpointer.setup()
 
     _init_graph = build_init_graph().compile(checkpointer=_checkpointer)
@@ -30,10 +35,18 @@ def setup_checkpointer() -> None:
     _end_graph = build_end_graph().compile(checkpointer=_checkpointer)
 
 
+def teardown_checkpointer() -> None:
+    """Close the PostgresSaver connection. Called once at app shutdown."""
+    global _conn
+    if _conn is not None:
+        _conn.close()
+        _conn = None
+
+
 def _thread_config(session_id: str, db=None) -> dict:
     cfg: dict = {"configurable": {"thread_id": session_id}}
     if db is not None:
-        cfg["db"] = db
+        cfg["configurable"]["db"] = db
     return cfg
 
 

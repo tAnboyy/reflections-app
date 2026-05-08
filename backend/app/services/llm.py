@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 import requests
 import json
 from openai import OpenAI
+from langsmith.wrappers import wrap_openai
 
 
 class LLMProvider(ABC):
@@ -21,9 +22,9 @@ class LLMProvider(ABC):
 class OpenAIProvider(LLMProvider):
     """Calls the OpenAI chat-completions API."""
 
-    def __init__(self):
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
-        self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    def __init__(self, model: str | None = None):
+        self.client = wrap_openai(OpenAI(api_key=os.getenv("OPENAI_API_KEY", "")))
+        self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
     def generate(self, messages: list[dict]) -> str:
         response = self.client.chat.completions.create(
@@ -37,10 +38,10 @@ class OpenAIProvider(LLMProvider):
 class OllamaProvider(LLMProvider):
     """Stub — implement when Ollama integration is needed."""
 
-    def __init__(self):
+    def __init__(self, model: str | None = None):
         # Ollama HTTP API (default port is 11434)
         self.url = os.getenv("OLLAMA_URL", "http://localhost:11434")
-        self.model = os.getenv("OLLAMA_MODEL", "llama2")
+        self.model = model or os.getenv("OLLAMA_MODEL", "llama2")
 
     def _messages_to_prompt(self, messages: list[dict]) -> str:
         # Simple conversion: label roles and join into one prompt string.
@@ -116,12 +117,12 @@ class OllamaProvider(LLMProvider):
 class GroqProvider(LLMProvider):
     """Calls Groq's OpenAI-compatible chat-completions API."""
 
-    def __init__(self):
-        self.client = OpenAI(
+    def __init__(self, model: str | None = None):
+        self.client = wrap_openai(OpenAI(
             api_key=os.getenv("GROQ_API_KEY", ""),
             base_url="https://api.groq.com/openai/v1",
-        )
-        self.model = os.getenv("GROQ_MODEL", "llama3-8b-8192")
+        ))
+        self.model = model or os.getenv("GROQ_MODEL", "llama3-8b-8192")
 
     def generate(self, messages: list[dict]) -> str:
         response = self.client.chat.completions.create(
@@ -142,3 +143,32 @@ def get_llm_provider() -> LLMProvider:
     if provider == "groq":
         return GroqProvider()
     raise ValueError(f"Unknown LLM_PROVIDER: {provider}")
+
+
+def get_llm_for_role(role: str) -> LLMProvider:
+    """Return an LLM provider configured for a specific agent role.
+
+    Reads {ROLE}_LLM_PROVIDER and {ROLE}_{PROVIDER}_MODEL env vars,
+    falling back to the global LLM_PROVIDER / model vars if unset.
+
+    Roles used in this app: "tutor", "evaluator", "planner".
+
+    Example .env overrides:
+        TUTOR_LLM_PROVIDER=openai
+        TUTOR_OPENAI_MODEL=gpt-4o
+        EVALUATOR_OPENAI_MODEL=gpt-4o-mini
+        PLANNER_GROQ_MODEL=llama3-8b-8192
+    """
+    prefix = role.upper()
+    provider = os.getenv(f"{prefix}_LLM_PROVIDER", os.getenv("LLM_PROVIDER", "openai")).lower()
+
+    if provider == "openai":
+        model = os.getenv(f"{prefix}_OPENAI_MODEL", os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+        return OpenAIProvider(model=model)
+    if provider == "groq":
+        model = os.getenv(f"{prefix}_GROQ_MODEL", os.getenv("GROQ_MODEL", "llama3-8b-8192"))
+        return GroqProvider(model=model)
+    if provider == "ollama":
+        model = os.getenv(f"{prefix}_OLLAMA_MODEL", os.getenv("OLLAMA_MODEL", "llama2"))
+        return OllamaProvider(model=model)
+    raise ValueError(f"Unknown provider for role '{role}': {provider}")

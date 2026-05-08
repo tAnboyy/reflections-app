@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import re
 
+from langchain_core.runnables import RunnableConfig
+
 from app.agents.state import ReflectionState
-from app.services.llm import get_llm_provider
+from app.services.llm import get_llm_for_role
 from app.services.prompts import build_question_generation_prompt
 
 
@@ -28,29 +30,29 @@ def _parse_questions(raw: str, sub_topics: list[str]) -> list[str]:
         return [f"What do you know about {topic}?" for topic in sub_topics]
 
 
-def generate_questions(state: ReflectionState, config: dict) -> dict:
+def generate_questions(state: ReflectionState, config: RunnableConfig) -> dict:
     """Call LLM to produce one question per sub_topic."""
     sub_topics = state["sub_topics"]
     if not sub_topics:
         return {"questions": [], "total_questions": 0}
 
-    llm = get_llm_provider()
+    llm = get_llm_for_role("planner")
     prompt = build_question_generation_prompt(sub_topics, state["config"])
     raw = llm.generate([{"role": "user", "content": prompt}])
     questions = _parse_questions(raw, sub_topics)
     return {"questions": questions, "total_questions": len(questions)}
 
 
-def route_phase(state: ReflectionState, config: dict) -> str:
+def route_phase(state: ReflectionState, config: RunnableConfig) -> str:
     """Conditional edge: did we just transition into bonus phase?"""
     if state.get("bonus_just_started"):
         return "bonus_transition"
     return "end"
 
 
-def bonus_transition(state: ReflectionState, config: dict) -> dict:
+def bonus_transition(state: ReflectionState, config: RunnableConfig) -> dict:
     """Replace last assistant message with intro + ask first bonus question (second LLM call)."""
-    llm = get_llm_provider()
+    llm = get_llm_for_role("tutor")
     wrong_subtopics = state["wrong_subtopics"]
     reply = state["current_reply"]  # already parsed plain text reply
 

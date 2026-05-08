@@ -31,6 +31,7 @@ async def lifespan(app: FastAPI):
     # Set up LangGraph checkpointer tables and compile graphs.
     agent_runner.setup_checkpointer()
     yield
+    agent_runner.teardown_checkpointer()
 
 
 app = FastAPI(

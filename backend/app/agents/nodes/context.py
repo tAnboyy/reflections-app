@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 from fastapi import HTTPException
+from langchain_core.runnables import RunnableConfig
 from sqlalchemy import desc
 
 from app.models import ModuleConfig, Conversation, ReflectionAnalytics
 from app.agents.state import ReflectionState
 
 
-def load_context(state: ReflectionState, config: dict) -> dict:
+def load_context(state: ReflectionState, config: RunnableConfig) -> dict:
     """Load ModuleConfig + past weak areas from DB. Runs once on /start."""
-    db = config["db"]
+    db = config["configurable"]["db"]
     student_id = state["student_id"]
     module_id = state["module_id"]
 
@@ -52,7 +53,7 @@ def load_context(state: ReflectionState, config: dict) -> dict:
     }
 
 
-def inject_context(state: ReflectionState, config: dict) -> dict:
+def inject_context(state: ReflectionState, config: RunnableConfig) -> dict:
     """Prepend [Q N/M: question] or [BONUS PHASE] tag to the user message."""
     total = state["total_questions"]
     question_idx = state["question_idx"]

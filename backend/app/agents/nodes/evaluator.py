@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 import re
 
+from langchain_core.runnables import RunnableConfig
+
 from app.agents.state import ReflectionState
 from app.services.evaluation import evaluate_transcript
-from app.services.llm import get_llm_provider
+from app.services.llm import get_llm_for_role
 
 
 def _parse_llm_json(raw: str) -> tuple[bool, str]:
@@ -20,7 +22,7 @@ def _parse_llm_json(raw: str) -> tuple[bool, str]:
         return False, raw
 
 
-def evaluate_reply(state: ReflectionState, config: dict) -> dict:
+def evaluate_reply(state: ReflectionState, config: RunnableConfig) -> dict:
     """Parse JSON reply, track wrong subtopics, advance question index, append to messages."""
     raw = state["current_reply"]
     adequate, reply = _parse_llm_json(raw)
@@ -63,10 +65,10 @@ def evaluate_reply(state: ReflectionState, config: dict) -> dict:
     }
 
 
-def evaluate_session(state: ReflectionState, config: dict) -> dict:
+def evaluate_session(state: ReflectionState, config: RunnableConfig) -> dict:
     """Call evaluation LLM, persist ReflectionAnalytics, return result."""
-    db = config["db"]
-    llm = get_llm_provider()
+    db = config["configurable"]["db"]
+    llm = get_llm_for_role("evaluator")
 
     eval_result = evaluate_transcript(
         conversation_id=state["conversation_id"],
