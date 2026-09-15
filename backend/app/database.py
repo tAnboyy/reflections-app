@@ -8,8 +8,12 @@ from sqlalchemy.exc import OperationalError
 from fastapi import HTTPException
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# Load .env from the backend root (one level up from app/)
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+# Load .env: root project .env first (shared with docker-compose), then
+# backend/.env for local overrides (takes precedence via override=True).
+_root = Path(__file__).resolve().parent.parent.parent
+_backend = Path(__file__).resolve().parent.parent
+load_dotenv(_root / ".env")
+load_dotenv(_backend / ".env", override=True)
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
