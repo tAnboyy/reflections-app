@@ -10,5 +10,5 @@ pandas
 python-multipart
 sentence-transformers
 langgraph>=0.2.40
-langgraph-checkpoint-postgres>=2.0.0
+langgraph-checkpoint-postgres>=3.2.0
 langsmith>=0.1.0
